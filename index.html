@@ -59,8 +59,8 @@
     background: var(--desk);
     font-family: var(--type);
     color: var(--ink);
-    padding: 34px 14px 60px;
-    line-height: 1.45;
+    padding: 20px 14px 44px;
+    line-height: 1.4;
   }
   .card {
     max-width: 860px; margin: 0 auto;
@@ -75,15 +75,15 @@
       var(--am1) 0 15px, var(--paper) 15px 30px,
       var(--am2) 30px 45px, var(--paper) 45px 60px);
   }
-  .inner { padding: 26px 32px 30px; }
+  .inner { padding: 16px 28px 20px; }
 
   /* ---- masthead ---- */
   header { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
   h1 {
-    font-family: var(--slab); font-weight: 700; font-size: 31px;
+    font-family: var(--slab); font-weight: 700; font-size: 27px;
     letter-spacing: 0.01em; line-height: 1.05;
   }
-  .dateline { font-size: 12px; color: var(--faded); margin-top: 5px; }
+  .dateline { font-size: 12px; color: var(--faded); margin-top: 3px; }
   .gridform { margin-left: auto; display: flex; align-items: baseline; gap: 9px; }
   .gridform label {
     font-family: var(--slab); font-weight: 600; font-size: 12px;
@@ -97,6 +97,7 @@
     width: 104px; text-align: center; padding: 2px 4px;
   }
   .gridform input:focus { outline: 2px solid var(--blue); outline-offset: 2px; }
+  .gridform input::placeholder { color: var(--faded); font-weight: 400; opacity: 0.65; }
   button {
     font-family: var(--type); font-weight: 700; font-size: 12px;
     letter-spacing: 0.1em; text-transform: uppercase;
@@ -109,21 +110,21 @@
   button.ghost { background: transparent; color: var(--ink); }
   button.ghost:hover { background: var(--ghost-hover); }
 
-  hr.heavy { border: none; border-top: 2px solid var(--ink); margin: 18px 0 0; }
+  hr.heavy { border: none; border-top: 2px solid var(--ink); margin: 12px 0 0; }
   hr.light { border: none; border-top: 1px solid var(--rule); margin: 0; }
 
   /* ---- report fields ---- */
   .fields {
-    display: flex; flex-wrap: wrap; gap: 8px 30px;
-    padding: 15px 0 14px;
+    display: flex; flex-wrap: wrap; gap: 5px 26px;
+    padding: 9px 0 8px;
   }
-  .field { min-width: 118px; }
+  .field { min-width: 108px; }
   .field .lbl {
     font-family: var(--slab); font-weight: 600; font-size: 11px;
     letter-spacing: 0.13em; text-transform: uppercase; color: var(--faded);
   }
   .field .val {
-    font-size: 18px; font-weight: 700; margin-top: 1px;
+    font-size: 17px; font-weight: 700; margin-top: 1px;
     border-bottom: 1px dotted var(--rule-mid);
     display: inline-block; min-width: 70px; padding: 0 2px 1px;
   }
@@ -135,8 +136,8 @@
 
   /* ---- live line ---- */
   .liveline {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
-    padding: 11px 0; font-size: 12px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+    padding: 7px 0; font-size: 12px;
   }
   .liveline .lbl {
     font-family: var(--slab); font-weight: 600; font-size: 12px;
@@ -173,16 +174,16 @@
   .band {
     display: grid;
     grid-template-columns: 88px 1fr 128px;
-    gap: 16px; align-items: center;
-    padding: 13px 0;
+    gap: 14px; align-items: center;
+    padding: 7px 0;
     border-bottom: 1px solid var(--rule);
   }
   .band:last-child { border-bottom: none; }
   .band .id { text-align: right; }
-  .band .nm { font-family: var(--slab); font-weight: 700; font-size: 22px; line-height: 1; }
-  .band .fq { display: block; font-size: 10.5px; color: var(--faded); margin-top: 3px; }
+  .band .nm { font-family: var(--slab); font-weight: 700; font-size: 19px; line-height: 1; }
+  .band .fq { display: block; font-size: 10.5px; color: var(--faded); margin-top: 2px; }
   .track {
-    height: 14px; border: 1px solid var(--rule-mid); background: var(--paper);
+    height: 12px; border: 1px solid var(--rule-mid); background: var(--paper);
   }
   .fill {
     height: 100%;
@@ -192,21 +193,21 @@
     transition: width 0.4s ease;
   }
   .fill[style*="width: 0%"] { border-right: none; }
-  .facts { font-size: 10.5px; color: var(--faded); margin-top: 6px; }
+  .facts { font-size: 10.5px; color: var(--faded); margin-top: 3px; }
   .facts b { color: var(--ink); font-weight: 700; }
   .stampcell { text-align: center; }
   .stamp {
     display: inline-block;
-    font-weight: 700; font-size: 13px; letter-spacing: 0.2em;
+    font-weight: 700; font-size: 12px; letter-spacing: 0.2em;
     text-transform: uppercase;
     border: 2px solid currentColor; border-radius: 3px;
-    padding: 3px 9px 2px 11px;
+    padding: 2px 8px 1px 10px;
     transform: rotate(-5deg);
     opacity: 0.88;
   }
   .band:nth-child(2n) .stamp { transform: rotate(-8deg); }
   .band:nth-child(3n) .stamp { transform: rotate(-3deg); }
-  .pct { display: block; font-size: 10px; color: var(--faded); margin-top: 5px; }
+  .pct { display: block; font-size: 10px; color: var(--faded); margin-top: 2px; }
   .s-open { color: var(--green); }
   .s-good { color: var(--blue); }
   .s-fair { color: var(--ochre); }
@@ -214,19 +215,37 @@
   .s-closed { color: var(--red-deep); }
 
   /* ---- notes ---- */
-  .notes { margin-top: 24px; border-top: 2px solid var(--ink); padding-top: 13px; }
-  .notes h2 {
-    font-family: var(--slab); font-weight: 700; font-size: 14px;
-    letter-spacing: 0.13em; text-transform: uppercase; margin-bottom: 7px;
+  .notes { margin-top: 16px; border-top: 2px solid var(--ink); padding-top: 9px; }
+  .notes summary {
+    list-style: none; cursor: pointer; user-select: none;
+    display: flex; align-items: baseline; gap: 9px;
+    font-family: var(--slab); font-weight: 700; font-size: 13px;
+    letter-spacing: 0.13em; text-transform: uppercase;
   }
-  .notes p { font-size: 11.5px; line-height: 1.75; color: var(--notes-ink); margin-bottom: 9px; }
+  .notes summary::-webkit-details-marker { display: none; }
+  .notes summary::before {
+    content: '\25B8'; font-family: var(--type); font-size: 11px;
+    color: var(--faded); transition: transform 0.15s ease;
+  }
+  .notes[open] summary::before { transform: rotate(90deg); }
+  .notes summary .hint {
+    font-family: var(--type); font-weight: 400; font-size: 10.5px;
+    letter-spacing: 0.02em; text-transform: none; color: var(--faded);
+  }
+  .notes[open] summary .hint { display: none; }
+  .notes summary:hover .hint { color: var(--ink); }
+  .notes summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  .notes p { font-size: 11.5px; line-height: 1.7; color: var(--notes-ink); margin: 8px 0 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .notes summary::before { transition: none; }
+  }
 
   @media (max-width: 620px) {
-    .inner { padding: 20px 18px 24px; }
-    .band { grid-template-columns: 62px 1fr; }
-    .stampcell { grid-column: 2; text-align: right; margin-top: 2px; }
-    .stamp { font-size: 12px; }
-    .band .nm { font-size: 18px; }
+    .inner { padding: 14px 14px 18px; }
+    .band { grid-template-columns: 50px 1fr 76px; gap: 10px; }
+    .band .nm { font-size: 16px; }
+    .band .fq { font-size: 9px; letter-spacing: 0; white-space: nowrap; }
+    .stamp { font-size: 10px; letter-spacing: 0.13em; padding: 2px 6px 1px 8px; }
     .gridform { margin-left: 0; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -245,7 +264,7 @@
       </div>
       <div class="gridform">
         <label for="grid">Grid</label>
-        <input id="grid" value="FN30" maxlength="6" spellcheck="false" autocomplete="off" aria-label="Maidenhead locator">
+        <input id="grid" placeholder="FN30as" maxlength="6" spellcheck="false" autocomplete="off" aria-label="Maidenhead locator">
         <button id="go">Update</button>
         <button id="theme" class="ghost" aria-label="Switch between light and dark theme">Night mode</button>
       </div>
@@ -270,8 +289,8 @@
 
     <div class="bands" id="bands"></div>
 
-    <div class="notes">
-      <h2>Notes on method</h2>
+    <details class="notes">
+      <summary>Notes on method<span class="hint">tap to open</span></summary>
       <p>
         Each band's score is the product of four gates, so a single bad factor is enough to
         close a band: score = 100 &times; MUF &times; absorption &times; geomagnetic &times;
@@ -308,7 +327,7 @@
         once, the browser or network is blocking cross-origin requests; save this file and
         open it directly.
       </p>
-    </div>
+    </details>
   </div>
 </div>
 
@@ -375,13 +394,16 @@ function kmBetween(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-function latLonToGrid(lat, lon) {
+function latLonToGrid(lat, lon, chars = 4) {
   lat = Math.min(89.999, Math.max(-89.999, lat));
   lon = ((lon + 180) % 360 + 360) % 360 - 180;
-  const A = 'ABCDEFGHIJKLMNOPQR';
+  const A = 'ABCDEFGHIJKLMNOPQR', SUB = 'abcdefghijklmnopqrstuvwx';
   const lo = lon + 180, la = lat + 90;
-  return A[Math.floor(lo / 20)] + A[Math.floor(la / 10)] +
-         Math.floor((lo % 20) / 2) + Math.floor(la % 10);
+  let g = A[Math.floor(lo / 20)] + A[Math.floor(la / 10)] +
+          Math.floor((lo % 20) / 2) + Math.floor(la % 10);
+  if (chars === 6)
+    g += SUB[Math.floor((lo % 2) * 12)] + SUB[Math.floor((la % 1) * 24)];
+  return g;
 }
 
 function neighborGrids(pos) {
@@ -770,8 +792,11 @@ async function refresh() {
   const msg = $('msg');
   msg.classList.remove('show');
   if (!pos) {
-    msg.textContent = 'That does not parse as a Maidenhead locator. Try FN30 or FN30as.';
+    msg.textContent = $('grid').value.trim()
+      ? 'That does not parse as a Maidenhead locator. Try FN30 or FN30as.'
+      : 'No location yet. Enter your Maidenhead grid above, or allow the location prompt and the report fills in on its own.';
     msg.classList.add('show');
+    $('clockline').textContent = 'awaiting a location';
     return;
   }
 
@@ -856,11 +881,23 @@ let darkMode = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)'
 applyTheme(darkMode);
 $('theme').addEventListener('click', () => { darkMode = !darkMode; applyTheme(darkMode); });
 
-// The grid travels in the URL, so a bookmark or shared link opens on the
-// right square. FN30 in the markup is only the fallback for a bare URL.
+// Locator priority: a grid in the URL wins, so a bookmark or shared link
+// opens on the right square. On a bare URL we ask the browser where we are
+// and fill the empty field once a fix arrives. There is no default square:
+// if geolocation is denied, unavailable, or off-https, the report waits
+// until a grid is typed.
 const urlGrid = (new URLSearchParams(location.search).get('grid') ||
                  location.hash.replace(/^#/, '')).trim();
-if (parseGrid(urlGrid)) $('grid').value = urlGrid.toUpperCase();
+if (parseGrid(urlGrid)) {
+  $('grid').value = urlGrid.toUpperCase();
+} else if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(p => {
+    if ($('grid').value.trim()) return;   // a typed grid wins over the fix
+    $('grid').value = latLonToGrid(p.coords.latitude, p.coords.longitude, 6);
+    refresh();
+  }, () => { /* denied or unavailable: the "no location yet" prompt stands */ },
+  { maximumAge: 10 * 60 * 1000, timeout: 10000 });
+}
 
 refresh();
 setInterval(refresh, 10 * 60 * 1000);                              // space weather
