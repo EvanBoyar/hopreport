@@ -11,7 +11,8 @@ function load() {
   const el = id => els[id] ??= {
     id, value: '', checked: true, innerHTML: '', textContent: '',
     className: '', style: {}, classList: { add() {}, remove() {} },
-    addEventListener() {}, dataset: {},
+    addEventListener() {}, dataset: {}, setAttribute() {},
+    querySelector: sel => el(id + ' ' + sel),
   };
   const sandbox = {
     console,

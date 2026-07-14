@@ -28,6 +28,8 @@
     --notes-ink: #4a463c;
     --am1: #be3b2e;
     --am2: #2c5697;
+    --icon-space: #1c2434;
+    --icon-ocean: #2a6a9b;
     --type: 'Courier Prime', 'Courier New', monospace;
     --slab: 'Zilla Slab', 'Rockwell', serif;
     color-scheme: light;
@@ -52,6 +54,8 @@
     --notes-ink: #b6c6d4;
     --am1: #d95f52;
     --am2: #7fa8dc;
+    --icon-space: #060b12;
+    --icon-ocean: #3d7fb5;
     color-scheme: dark;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -78,13 +82,46 @@
   .inner { padding: 16px 28px 20px; }
 
   /* ---- masthead ---- */
-  header { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .mark { display: block; line-height: 0; }
+  .mark svg { display: block; }
+  .mark:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  .titleline { display: flex; align-items: center; gap: 9px; }
   h1 {
     font-family: var(--slab); font-weight: 700; font-size: 27px;
     letter-spacing: 0.01em; line-height: 1.05;
   }
+  /* day/night switch: a little sun or moon crossing a pill-shaped sky */
+  .themebtn {
+    position: relative; width: 46px; height: 22px; flex: none;
+    border: 2px solid var(--ink); border-radius: 12px;
+    background: transparent; padding: 0; cursor: pointer;
+  }
+  .themebtn:hover { background: var(--ghost-hover); }
+  .themebtn .orb {
+    position: absolute; top: 2px; left: 2px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--ink); color: var(--paper);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.2s ease;
+  }
+  .themebtn .orb svg { width: 10px; height: 10px; display: block; }
+  .themebtn .orb .i-moon { display: none; }
+  :root[data-theme="dark"] .themebtn .orb { transform: translateX(24px); }
+  :root[data-theme="dark"] .themebtn .orb .i-sun { display: none; }
+  :root[data-theme="dark"] .themebtn .orb .i-moon { display: block; }
+  @media (prefers-reduced-motion: reduce) {
+    .themebtn .orb { transition: none; }
+  }
+  .byline {
+    font-size: 11px; color: var(--faded); text-decoration: none;
+    border-bottom: 1px dotted var(--rule-mid); white-space: nowrap;
+  }
+  .byline:hover { color: var(--ink); }
+  .byline:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
   .dateline { font-size: 12px; color: var(--faded); margin-top: 3px; }
-  .gridform { margin-left: auto; display: flex; align-items: baseline; gap: 9px; }
+  .gridform { margin-left: auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 9px; }
+  .gridform .srcbox { margin-left: 6px; align-self: center; }
   .gridform label {
     font-family: var(--slab); font-weight: 600; font-size: 12px;
     letter-spacing: 0.12em; color: var(--faded);
@@ -143,8 +180,11 @@
     font-family: var(--slab); font-weight: 600; font-size: 12px;
     letter-spacing: 0.13em; text-transform: uppercase; color: var(--faded);
   }
+  .liveline { border-bottom: 1px solid var(--rule); }
+  .liveline[hidden] { display: none; }
   .lstate { color: var(--ink); }
   .lstate.ok { color: var(--green); }
+  .lstate.warn { color: var(--ochre); }
   .lstate.bad { color: var(--red); }
   .srcbox { display: flex; align-items: center; gap: 11px; }
   .cwbox {
@@ -249,7 +289,9 @@
     .band .nm { font-size: 16px; }
     .band .fq { font-size: 9px; letter-spacing: 0; white-space: nowrap; }
     .stamp { font-size: 10px; letter-spacing: 0.13em; padding: 2px 6px 1px 8px; }
-    .gridform { margin-left: 0; }
+    .gridform { margin-left: 0; order: 2; }
+    /* the title line has spare width when squished; the switch joins it */
+    .themebtn { order: 1; margin-left: auto; align-self: flex-start; margin-top: 5px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .fill { transition: none; }
@@ -261,32 +303,68 @@
   <div class="airmail" aria-hidden="true"></div>
   <div class="inner">
     <header>
+      <a class="mark" href="https://github.com/EvanBoyar" aria-label="Evan Boyar on GitHub">
+        <svg viewBox="0 0 64 64" width="38" height="38" aria-hidden="true">
+          <clipPath id="mr"><rect width="64" height="64" rx="10"/></clipPath>
+          <clipPath id="me"><path d="M 0 56 Q 32 47 64 56 L 64 64 L 0 64 Z"/></clipPath>
+          <g clip-path="url(#mr)">
+            <rect fill="var(--paper)" width="64" height="64"/>
+            <path fill="var(--icon-space)" d="M 0 0 L 64 0 L 64 18 Q 32 8 0 18 Z"/>
+            <path fill="var(--blue)" d="M 0 18 Q 32 8 64 18 L 64 22 Q 32 12 0 22 Z"/>
+            <path fill="var(--blue)" opacity="0.55" d="M 0 38 Q 32 28 64 38 L 64 41 Q 32 31 0 41 Z"/>
+            <path fill="var(--icon-ocean)" d="M 0 56 Q 32 47 64 56 L 64 64 L 0 64 Z"/>
+            <g clip-path="url(#me)">
+              <ellipse fill="var(--green)" cx="13" cy="58" rx="12" ry="9"/>
+              <ellipse fill="var(--green)" cx="51" cy="58" rx="12" ry="9"/>
+            </g>
+            <path stroke="var(--ink)" d="M 12 53 Q 32 -12 52 53" fill="none" stroke-width="5.5" stroke-linecap="round"/>
+            <circle fill="var(--red)" cx="12" cy="53" r="5.5"/>
+            <circle fill="var(--red)" cx="52" cy="53" r="5.5"/>
+          </g>
+          <rect width="64" height="64" rx="10" fill="none" stroke="var(--card-edge)" stroke-width="2"/>
+        </svg>
+      </a>
       <div>
-        <h1>The Hop Report</h1>
+        <div class="titleline">
+          <h1>The Hop Report</h1>
+          <a class="byline" href="https://www.qrz.com/db/NR8E">by NR8E</a>
+        </div>
         <div class="dateline" id="clockline">preparing report</div>
       </div>
       <div class="gridform">
         <label for="grid">Grid</label>
         <input id="grid" placeholder="FN30as" maxlength="6" spellcheck="false" autocomplete="off" aria-label="Maidenhead locator">
         <button id="go">Update</button>
-        <button id="theme" class="ghost" aria-label="Switch between light and dark theme">Night mode</button>
+        <span class="srcbox" role="group" aria-label="Sources counted in the scores">
+          <label class="cwbox"><input type="checkbox" id="incDigi" checked> digi</label>
+          <label class="cwbox"><input type="checkbox" id="incCw" checked> CW</label>
+          <label class="cwbox"><input type="checkbox" id="incModel" checked> model</label>
+        </span>
       </div>
+      <button id="theme" class="themebtn" role="switch" aria-checked="false" aria-label="Dark theme">
+        <span class="orb" aria-hidden="true">
+          <svg class="i-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+            <circle cx="8" cy="8" r="3" fill="currentColor" stroke="none"/>
+            <g stroke-width="1.5" stroke-linecap="round">
+              <line x1="8" y1="1" x2="8" y2="2.6"/><line x1="8" y1="13.4" x2="8" y2="15"/>
+              <line x1="1" y1="8" x2="2.6" y2="8"/><line x1="13.4" y1="8" x2="15" y2="8"/>
+              <line x1="3.05" y1="3.05" x2="4.18" y2="4.18"/><line x1="11.82" y1="11.82" x2="12.95" y2="12.95"/>
+              <line x1="3.05" y1="12.95" x2="4.18" y2="11.82"/><line x1="11.82" y1="4.18" x2="12.95" y2="3.05"/>
+            </g>
+          </svg>
+          <svg class="i-moon" viewBox="0 0 16 16">
+            <path fill="currentColor" d="M 10.8 2.2 A 6.4 6.4 0 1 0 10.8 13.8 A 5.2 5.2 0 1 1 10.8 2.2 Z"/>
+          </svg>
+        </span>
+      </button>
     </header>
 
     <hr class="heavy">
 
-    <div class="liveline">
+    <div class="liveline" id="liveline" hidden>
       <span class="lbl">Live spots</span>
-      <span id="mqttState" class="lstate">starting</span>
-      <span class="gap"></span>
-      <span class="srcbox" role="group" aria-label="Sources counted in the scores">
-        <span class="lbl">Count</span>
-        <label class="cwbox"><input type="checkbox" id="incDigi" checked> digi</label>
-        <label class="cwbox"><input type="checkbox" id="incCw" checked> CW</label>
-        <label class="cwbox"><input type="checkbox" id="incModel" checked> model</label>
-      </span>
+      <span id="mqttState" class="lstate"></span>
     </div>
-    <hr class="light">
 
     <div class="msg" id="msg"></div>
 
@@ -344,7 +422,7 @@
         (fourth full weekend of June and the like), which have been stable for decades and
         outlive any calendar feed this page could fetch. SSB-only majors are ignored since
         phone barely reaches this feed, and regional events like Field Day apply only when
-        your grid is in the Americas. An active contest is shown next to the clock. Measured reality outvotes the
+        your grid is in the Americas. An active contest is shown under the title. Measured reality outvotes the
         prediction in both directions. CW spots arrive through the same feed because PSK
         Reporter ingests the Reverse Beacon Network's skimmer spots. The count switches above
         the log choose what feeds each score: digital spots, CW spots, and the computed

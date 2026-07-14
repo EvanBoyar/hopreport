@@ -67,6 +67,9 @@ function setLiveState(txt, cls) {
   const el = $('mqttState');
   el.textContent = txt;
   el.className = 'lstate' + (cls ? ' ' + cls : '');
+  // The line only surfaces when the feed is unhealthy; a working live
+  // layer speaks through the band facts instead.
+  $('liveline').hidden = !(cls === 'bad' || cls === 'warn');
 }
 
 function subscribeGrids(c, grids) {
@@ -108,7 +111,7 @@ function attemptConnect(urls, grids, round = 1) {
     // Never give up: quick rounds at first, then a gentler cadence so we do
     // not hammer the broker. Scores stay model only until the feed answers.
     const delay = round < 3 ? 20 : 60;
-    setLiveState(`no answer on round ${round}. Retrying in ${delay} s; scores are model only meanwhile.`);
+    setLiveState(`no answer on round ${round}. Retrying in ${delay} s; scores are model only meanwhile.`, 'warn');
     if (round === 3) {
       $('qslNote').textContent =
         'Three rounds without an answer. The broker accepts secure WebSockets from https pages, so a firewall on port 1886 or a broker outage is likely. Retries continue in the background.';
@@ -143,7 +146,7 @@ function attemptConnect(urls, grids, round = 1) {
     if (mqttClient !== c) return;              // superseded by a newer attempt
     if (wasConnected) {                        // an established link dropped
       wasConnected = false;
-      setLiveState('link lost. Retrying in 15 s.');
+      setLiveState('link lost. Retrying in 15 s.', 'warn');
       setTimeout(() => {
         if (mqttClient !== c) return;
         try { c.end(true); } catch (e) {}

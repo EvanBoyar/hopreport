@@ -74,7 +74,7 @@ async function refresh() {
   try { history.replaceState(null, '', '#' + $('grid').value.trim().toUpperCase()); } catch (e) {}
   const contest = activeContest(now, pos.lat, pos.lon);
   $('clockline').textContent =
-    `${now.toUTCString().slice(5, 22)} UTC / ${pos.lat.toFixed(1)}\u00b0, ${pos.lon.toFixed(1)}\u00b0 / sun ${sunEl >= 0 ? '+' : ''}${sunEl.toFixed(0)}\u00b0 (${sunEl > 0 ? 'day' : 'night'})` +
+    `${pos.lat.toFixed(1)}\u00b0, ${pos.lon.toFixed(1)}\u00b0 / sun ${sunEl >= 0 ? '+' : ''}${sunEl.toFixed(0)}\u00b0 (${sunEl > 0 ? 'day' : 'night'})` +
     (contest ? ` / ${contest.nm} weekend` : '');
 
   $('status').innerHTML = fieldTile('Status', '&hellip;', '', 'est', 'fetching space weather');
@@ -146,8 +146,10 @@ for (const id of ['incDigi', 'incCw', 'incModel'])
   $(id).addEventListener('change', () => { if (lastCtx) renderBands(lastCtx); });
 
 function applyTheme(dark) {
+  // The orb shows the current sky: sun by day at the left of the pill,
+  // moon by night at the right; CSS slides it and swaps the icon.
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  $('theme').textContent = dark ? 'Day mode' : 'Night mode';
+  $('theme').setAttribute('aria-checked', String(dark));
 }
 let darkMode = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
 applyTheme(darkMode);
