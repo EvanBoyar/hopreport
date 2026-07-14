@@ -408,9 +408,11 @@
         to spots transmitted from or received in your grid square and its eight neighbors,
         kept for a rolling hour, aged by when each spot was heard rather than when it
         arrived. The feed carries no history, so the window fills gradually after the page
-        opens. Once a band collects three or more spots, its
-        displayed score becomes 0.6 live + 0.4 model, where the live score combines spot count
-        with maximum distance normalized for each band. The spot count is first weighed
+        opens; counts are scaled to the filled fraction so bands do not appear to improve
+        for an hour after loading, and the live share of the blend ramps up with coverage.
+        Once a band collects three or more spots, its
+        displayed score becomes up to 0.6 live + 0.4 model, where the live score combines
+        spot rate with maximum distance normalized for each band. The spot count is first weighed
         against expected operator activity for the local solar time and day of week, since
         the networks go quiet in the small hours and run hot on contest weekends: a handful
         of spots at 4 am counts for more than the same handful at 8 pm. The activity curve

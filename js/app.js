@@ -30,15 +30,23 @@ function renderBands(ctx) {
   // sources, both directions), so a filtered view falls back to the
   // universal constant rather than compare unlike quantities.
   const grids = (useDigi && useCw && baselineData) ? neighborGrids({ lat, lon }) : null;
+  // How much of the hour window has actually filled: the feed has no
+  // history, so counts are extrapolated to a rate by liveScore, and the
+  // live share of the blend ramps up with coverage (full weight from 30
+  // minutes on) so thin extrapolations do not get a full vote. Retrieval
+  // spots arrive as a full hour, so no feed at all means fill = 1.
+  const fill = liveSince
+    ? Math.min(1, (Date.now() - liveSince) / LIVE_WINDOW) : 1;
+  const liveW = 0.6 * Math.min(1, fill / 0.5);
   $('bands').innerHTML = BANDS.map(b => {
     const s = scoreBand(b, ctx);
     const st = liveStats(b.nm, useDigi, useCw);
     const bl = grids ? baselineExpected(baselineData, grids, b.nm) : null;
-    const lv = (useDigi || useCw) ? liveScore(b, st, act, bl ? bl.ref : null) : null;
+    const lv = (useDigi || useCw) ? liveScore(b, st, act, bl ? bl.ref : null, fill) : null;
     // With the model excluded, a band scores on live spots alone and shows
     // no verdict until it has enough of them.
     const score = useModel
-      ? (lv == null ? s.score : Math.round(0.6 * lv + 0.4 * s.score))
+      ? (lv == null ? s.score : Math.round(liveW * lv + (1 - liveW) * s.score))
       : (lv == null ? null : Math.round(lv));
     const [word, cls] = score == null ? [st.n ? 'sparse' : 'quiet', 's-none'] : verdict(score);
     let facts = (b.es && ctx.muf < 40 && !st.n)
@@ -54,7 +62,8 @@ function renderBands(ctx) {
       const dirBit = `<span title="heard in your area / your area heard elsewhere">↓${rxN} ↑${txN}</span>`;
       let devBit = '';
       if (bl) {
-        const dev = normalizedRate(st, act) / bl.expected;
+        const rate = normalizedRate(st, act) / Math.max(1 / 12, fill);
+        const dev = rate / bl.expected;
         devBit = ` (<b>${dev >= 10 ? Math.round(dev) : dev.toFixed(1)}×</b> usual)`;
       }
       const tail = lv != null ? (useModel ? 'blended live' : 'live only')

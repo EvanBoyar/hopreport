@@ -293,7 +293,7 @@ function baselineExpected(data, grids, bandName) {
   return { expected: sum, ref: 40 * Math.min(6, Math.max(0.2, sum / b.ref)) };
 }
 
-function liveScore(band, st, act = null, ref = null) {
+function liveScore(band, st, act = null, ref = null, fill = 1) {
   // Needs a few spots before we trust it, then activity plus reach, normalized
   // per band. 1500 km on 160m is a great night; on 15m it is nothing.
   // Counts are normalized per mode and per direction by expected operator
@@ -304,8 +304,13 @@ function liveScore(band, st, act = null, ref = null) {
   // reference when the baseline knows the area, else the universal 40:
   // 40 normalized spots/hour at evening peak reads the same as 10 spots
   // did over the old 15 minute window.
+  //
+  // fill is the filled fraction of the hour window (the feed has no
+  // history, so a fresh page has only minutes of spots). Counts scale to
+  // a per-hour rate so bands do not appear to improve as the window
+  // fills; the floor caps the extrapolation at x12 (5 minutes of data).
   if (st.n < 3) return null;
-  const nEff = normalizedRate(st, act);
+  const nEff = normalizedRate(st, act) / Math.max(1 / 12, Math.min(1, fill));
   const activity = 1 - Math.exp(-nEff / (ref || 40));
   const reach = Math.min(1, st.max / (REF_DIST[band.nm] || 5000));
   return 100 * (0.45 * activity + 0.55 * reach);

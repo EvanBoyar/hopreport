@@ -52,6 +52,8 @@ function load() {
       set myGrids(v) { myGrids = v; },
       get baselineData() { return baselineData; },
       set baselineData(v) { baselineData = v; },
+      get liveSince() { return liveSince; },
+      set liveSince(v) { liveSince = v; },
     };`;
   vm.runInContext(src + '\n;\n' + expose, sandbox, { filename: 'app-concat.js' });
   return { api: sandbox.__api, el, els, sandbox };

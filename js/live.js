@@ -11,6 +11,7 @@ let lastCtx = null;
 let mqttClient = null, mqttGrids = '';
 let lastQsl = 0;
 let myGrids = new Set();   // current 4-char square + neighbors, for direction tagging
+let liveSince = 0;         // when the current window started filling (0 = no feed yet)
 
 // Bare wss on 1886 is the confirmed-working endpoint (sometimes slow to
 // answer, hence the generous timeout), so it leads. wss works from https and
@@ -98,7 +99,7 @@ function connectLive(pos) {
   }
   const key = grids.join(',');
   if (key === mqttGrids && mqttClient && (mqttClient.connected || cascadeActive)) return;
-  if (mqttClient) { try { mqttClient.end(true); } catch (e) {} mqttClient = null; spots = []; }
+  if (mqttClient) { try { mqttClient.end(true); } catch (e) {} mqttClient = null; spots = []; liveSince = 0; }
   mqttGrids = key;
   const urls = goodUrl
     ? [goodUrl, ...MQTT_URLS.filter(u => u !== goodUrl)]
@@ -137,6 +138,7 @@ function attemptConnect(urls, grids, round = 1) {
   c.on('connect', () => {
     settled = true; wasConnected = true;
     goodUrl = url; cascadeActive = false;
+    if (!liveSince) liveSince = Date.now();   // reconnects keep the window's age
     setLiveState(`live: ${grids[0]} + ${grids.length - 1} neighbors via ${url.split('//')[1]}`, 'ok');
     $('qslNote').textContent = '';
     subscribeGrids(c, grids);
