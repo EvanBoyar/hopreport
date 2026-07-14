@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Hop Report</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><style>.k{fill:%23fcfbf6}.v{fill:%231c2434}.o{fill:%232c5697}.w{fill:%232a6a9b}.g{fill:%232e7c4f}.h{stroke:%2323211c}.s{fill:%23be3b2e}@media(prefers-color-scheme:dark){.k{fill:%2315293f}.v{fill:%23060b12}.o{fill:%237fa8dc}.w{fill:%233d7fb5}.g{fill:%236fbe8b}.h{stroke:%23dce8f2}.s{fill:%23e0685c}}</style><clipPath id='r'><rect width='64' height='64' rx='10'/></clipPath><clipPath id='e'><path d='M 0 56 Q 32 47 64 56 L 64 64 L 0 64 Z'/></clipPath><g clip-path='url(%23r)'><rect class='k' width='64' height='64'/><rect class='v' width='64' height='16'/><rect class='o' y='16' width='64' height='4'/><path class='w' d='M 0 56 Q 32 47 64 56 L 64 64 L 0 64 Z'/><g clip-path='url(%23e)'><ellipse class='g' cx='13' cy='58' rx='12' ry='9'/><ellipse class='g' cx='51' cy='58' rx='12' ry='9'/></g><path class='h' d='M 12 53 Q 32 -17 52 53' fill='none' stroke-width='5.5' stroke-linecap='round'/><circle class='s' cx='12' cy='53' r='5.5'/><circle class='s' cx='52' cy='53' r='5.5'/></g></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;600;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
+<style>
+  :root {
+    --desk: #e7e4db;
+    --paper: #fcfbf6;
+    --ink: #23211c;
+    --faded: #6e6858;
+    --rule: #ddd8c6;
+    --rule-mid: #b5ae9b;
+    --red: #be3b2e;
+    --red-deep: #7e2a22;
+    --blue: #2c5697;
+    --green: #2e7c4f;
+    --ochre: #8a6d2f;
+    --card-edge: #c6c0ad;
+    --shadow: rgba(60, 54, 38, 0.22);
+    --btn-hover: #3b382f;
+    --ghost-hover: rgba(35, 33, 28, 0.07);
+    --notes-ink: #4a463c;
+    --am1: #be3b2e;
+    --am2: #2c5697;
+    --type: 'Courier Prime', 'Courier New', monospace;
+    --slab: 'Zilla Slab', 'Rockwell', serif;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    /* cyanotype: pale ink on Prussian-blue print paper */
+    --desk: #0b131c;
+    --paper: #15293f;
+    --ink: #dce8f2;
+    --faded: #8fa5b8;
+    --rule: #2b4258;
+    --rule-mid: #41607d;
+    --red: #e0685c;
+    --red-deep: #c04a3e;
+    --blue: #7fa8dc;
+    --green: #6fbe8b;
+    --ochre: #c9a75c;
+    --card-edge: #325070;
+    --shadow: rgba(0, 0, 0, 0.45);
+    --btn-hover: #c3d4e2;
+    --ghost-hover: rgba(220, 232, 242, 0.1);
+    --notes-ink: #b6c6d4;
+    --am1: #d95f52;
+    --am2: #7fa8dc;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--desk);
+    font-family: var(--type);
+    color: var(--ink);
+    padding: 34px 14px 60px;
+    line-height: 1.45;
+  }
+  .card {
+    max-width: 860px; margin: 0 auto;
+    background: var(--paper);
+    border: 1px solid var(--card-edge);
+    box-shadow: 0 2px 5px var(--shadow);
+  }
+  .airmail {
+    height: 13px;
+    border-bottom: 1px solid var(--card-edge);
+    background: repeating-linear-gradient(-45deg,
+      var(--am1) 0 15px, var(--paper) 15px 30px,
+      var(--am2) 30px 45px, var(--paper) 45px 60px);
+  }
+  .inner { padding: 26px 32px 30px; }
+
+  /* ---- masthead ---- */
+  header { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+  h1 {
+    font-family: var(--slab); font-weight: 700; font-size: 31px;
+    letter-spacing: 0.01em; line-height: 1.05;
+  }
+  .dateline { font-size: 12px; color: var(--faded); margin-top: 5px; }
+  .gridform { margin-left: auto; display: flex; align-items: baseline; gap: 9px; }
+  .gridform label {
+    font-family: var(--slab); font-weight: 600; font-size: 12px;
+    letter-spacing: 0.12em; color: var(--faded);
+  }
+  .gridform input {
+    font-family: var(--type); font-weight: 700; font-size: 19px;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink); background: transparent;
+    border: none; border-bottom: 2px solid var(--ink);
+    width: 104px; text-align: center; padding: 2px 4px;
+  }
+  .gridform input:focus { outline: 2px solid var(--blue); outline-offset: 2px; }
+  button {
+    font-family: var(--type); font-weight: 700; font-size: 12px;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    background: var(--ink); color: var(--paper);
+    border: 1px solid var(--ink); border-radius: 2px;
+    padding: 7px 14px; cursor: pointer;
+  }
+  button:hover { background: var(--btn-hover); }
+  button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  button.ghost { background: transparent; color: var(--ink); }
+  button.ghost:hover { background: var(--ghost-hover); }
+
+  hr.heavy { border: none; border-top: 2px solid var(--ink); margin: 18px 0 0; }
+  hr.light { border: none; border-top: 1px solid var(--rule); margin: 0; }
+
+  /* ---- report fields ---- */
+  .fields {
+    display: flex; flex-wrap: wrap; gap: 8px 30px;
+    padding: 15px 0 14px;
+  }
+  .field { min-width: 118px; }
+  .field .lbl {
+    font-family: var(--slab); font-weight: 600; font-size: 11px;
+    letter-spacing: 0.13em; text-transform: uppercase; color: var(--faded);
+  }
+  .field .val {
+    font-size: 18px; font-weight: 700; margin-top: 1px;
+    border-bottom: 1px dotted var(--rule-mid);
+    display: inline-block; min-width: 70px; padding: 0 2px 1px;
+  }
+  .field .val .unit { font-size: 11px; font-weight: 400; color: var(--faded); }
+  .field .src { font-size: 10.5px; margin-top: 2px; }
+  .src.ok { color: var(--green); }
+  .src.est { color: var(--blue); }
+  .src.bad { color: var(--red); }
+
+  /* ---- live line ---- */
+  .liveline {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+    padding: 11px 0; font-size: 12px;
+  }
+  .liveline .lbl {
+    font-family: var(--slab); font-weight: 600; font-size: 12px;
+    letter-spacing: 0.13em; text-transform: uppercase; color: var(--faded);
+  }
+  .lstate { color: var(--ink); }
+  .lstate.ok { color: var(--green); }
+  .lstate.bad { color: var(--red); }
+  .cwbox {
+    display: flex; align-items: center; gap: 5px; cursor: pointer;
+    font-weight: 700; letter-spacing: 0.06em; user-select: none;
+  }
+  .cwbox input { accent-color: var(--ink); width: 14px; height: 14px; cursor: pointer; }
+  .gap { flex: 1; }
+  .liveline input[type="text"], #mycall {
+    font-family: var(--type); font-weight: 700; font-size: 13px;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    background: transparent; color: var(--ink);
+    border: none; border-bottom: 2px solid var(--ink);
+    width: 104px; padding: 2px 4px;
+  }
+  #mycall:focus { outline: 2px solid var(--blue); outline-offset: 2px; }
+  .note { font-size: 11px; color: var(--faded); width: 100%; }
+  .note:empty { display: none; }
+
+  .msg {
+    display: none; font-size: 12.5px; color: var(--red);
+    border-left: 3px solid var(--red); padding: 8px 12px; margin: 12px 0 0;
+  }
+  .msg.show { display: block; }
+
+  /* ---- band log ---- */
+  .bands { }
+  .band {
+    display: grid;
+    grid-template-columns: 88px 1fr 128px;
+    gap: 16px; align-items: center;
+    padding: 13px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .band:last-child { border-bottom: none; }
+  .band .id { text-align: right; }
+  .band .nm { font-family: var(--slab); font-weight: 700; font-size: 22px; line-height: 1; }
+  .band .fq { display: block; font-size: 10.5px; color: var(--faded); margin-top: 3px; }
+  .track {
+    height: 14px; border: 1px solid var(--rule-mid); background: var(--paper);
+  }
+  .fill {
+    height: 100%;
+    background: repeating-linear-gradient(-45deg,
+      var(--ink) 0, var(--ink) 1.5px, transparent 1.5px, transparent 5px);
+    border-right: 2px solid var(--ink);
+    transition: width 0.4s ease;
+  }
+  .fill[style*="width: 0%"] { border-right: none; }
+  .facts { font-size: 10.5px; color: var(--faded); margin-top: 6px; }
+  .facts b { color: var(--ink); font-weight: 700; }
+  .stampcell { text-align: center; }
+  .stamp {
+    display: inline-block;
+    font-weight: 700; font-size: 13px; letter-spacing: 0.2em;
+    text-transform: uppercase;
+    border: 2px solid currentColor; border-radius: 3px;
+    padding: 3px 9px 2px 11px;
+    transform: rotate(-5deg);
+    opacity: 0.88;
+  }
+  .band:nth-child(2n) .stamp { transform: rotate(-8deg); }
+  .band:nth-child(3n) .stamp { transform: rotate(-3deg); }
+  .pct { display: block; font-size: 10px; color: var(--faded); margin-top: 5px; }
+  .s-open { color: var(--green); }
+  .s-good { color: var(--blue); }
+  .s-fair { color: var(--ochre); }
+  .s-poor { color: var(--red); }
+  .s-closed { color: var(--red-deep); }
+
+  /* ---- notes ---- */
+  .notes { margin-top: 24px; border-top: 2px solid var(--ink); padding-top: 13px; }
+  .notes h2 {
+    font-family: var(--slab); font-weight: 700; font-size: 14px;
+    letter-spacing: 0.13em; text-transform: uppercase; margin-bottom: 7px;
+  }
+  .notes p { font-size: 11.5px; line-height: 1.75; color: var(--notes-ink); margin-bottom: 9px; }
+
+  @media (max-width: 620px) {
+    .inner { padding: 20px 18px 24px; }
+    .band { grid-template-columns: 62px 1fr; }
+    .stampcell { grid-column: 2; text-align: right; margin-top: 2px; }
+    .stamp { font-size: 12px; }
+    .band .nm { font-size: 18px; }
+    .gridform { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fill { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="airmail" aria-hidden="true"></div>
+  <div class="inner">
+    <header>
+      <div>
+        <h1>The Hop Report</h1>
+        <div class="dateline" id="clockline">preparing report</div>
+      </div>
+      <div class="gridform">
+        <label for="grid">Grid</label>
+        <input id="grid" value="FN30" maxlength="6" spellcheck="false" autocomplete="off" aria-label="Maidenhead locator">
+        <button id="go">Update</button>
+        <button id="theme" class="ghost" aria-label="Switch between light and dark theme">Night mode</button>
+      </div>
+    </header>
+
+    <hr class="heavy">
+    <div class="fields" id="status" aria-live="polite"></div>
+    <hr class="light">
+
+    <div class="liveline">
+      <span class="lbl">Live spots</span>
+      <span id="mqttState" class="lstate">starting</span>
+      <label class="cwbox"><input type="checkbox" id="cwonly"> CW only</label>
+      <span class="gap"></span>
+      <input id="mycall" placeholder="MYCALL" maxlength="12" spellcheck="false" autocomplete="off" aria-label="Your callsign">
+      <button id="qsl" class="ghost">Where was I heard?</button>
+      <span id="qslNote" class="note"></span>
+    </div>
+    <hr class="light">
+
+    <div class="msg" id="msg"></div>
+
+    <div class="bands" id="bands"></div>
+
+    <div class="notes">
+      <h2>Notes on method</h2>
+      <p>
+        Each band's score is the product of four gates, so a single bad factor is enough to
+        close a band: score = 100 &times; MUF &times; absorption &times; geomagnetic &times;
+        season. The MUF gate uses the nearest fresh ionosonde's measured MUF(3000) when one is
+        reachable through prop.kc2g.com, and otherwise falls back to an estimate built from
+        SFI. A band scores full marks below roughly 0.85 of the MUF and falls off sharply
+        above it. The absorption gate models D-layer loss from the sun's elevation at your
+        grid, scaled by 1/f&sup2; and multiplied by the current GOES X-ray flare class, which
+        is what closes 160 through 40&nbsp;m in daylight and opens them at night. The
+        geomagnetic gate lowers the MUF by 5% for each Kp point above 3 and applies a direct
+        penalty scaled to your latitude, weighted toward the high bands. The season gate trims
+        the low bands for summer static. Treat the 6&nbsp;m figure as a floor rather than a
+        forecast, since nothing in the indices predicts sporadic&nbsp;E. The LUF readout is
+        derived from the same absorption gate rather than modeled separately: it is the
+        frequency where daytime D-layer loss alone would pull a band below fair. It is shown
+        for orientation and never feeds the scores a second time, since each band's absorption
+        factor already contains it. A real LUF also depends on your power, antenna, and mode.
+        Weak-signal modes such as FT8 dig well below the figure shown, which is why live spots
+        can appear under it. When the LUF climbs past the MUF during a strong flare, the page
+        flags a shortwave fadeout.
+      </p>
+      <p>
+        The live layer subscribes to PSK Reporter's public MQTT feed over WebSockets, filtered
+        to spots transmitted from or received in your grid square and its eight neighbors,
+        kept in a rolling 15 minute window. Once a band collects three or more spots, its
+        displayed score becomes 0.6 live + 0.4 model, where the live score combines spot count
+        with maximum distance normalized for each band. Measured reality outvotes the
+        prediction in both directions. CW spots arrive through the same feed because PSK
+        Reporter ingests the Reverse Beacon Network's skimmer spots, and the CW only switch
+        rescores the live layer from those alone. The feed skews toward FT8 monitors, so a
+        band that is lively on SSB but quiet on digital and CW can still read low. The
+        callsign query folds your own reception reports in through the retrieval API, limited
+        to one query every five minutes under PSK Reporter's rules. If every source fails at
+        once, the browser or network is blocking cross-origin requests; save this file and
+        open it directly.
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+const BANDS = [
+  { nm: '160m', f: 1.9,   es: false },
+  { nm: '80m',  f: 3.65,  es: false },
+  { nm: '40m',  f: 7.1,   es: false },
+  { nm: '30m',  f: 10.12, es: false },
+  { nm: '20m',  f: 14.15, es: false },
+  { nm: '17m',  f: 18.1,  es: false },
+  { nm: '15m',  f: 21.2,  es: false },
+  { nm: '12m',  f: 24.95, es: false },
+  { nm: '10m',  f: 28.4,  es: false },
+  { nm: '6m',   f: 50.3,  es: true  },
+];
+const BAND_BY_NAME = Object.fromEntries(BANDS.map(b => [b.nm, b]));
+const REF_DIST = { '160m': 1500, '80m': 2000, '40m': 3500, '30m': 4000,
+                   '20m': 6000, '17m': 6000, '15m': 6000, '12m': 6000,
+                   '10m': 6000, '6m': 2000 };
+const LIVE_WINDOW = 15 * 60 * 1000;
+
+/* ---------- geometry ---------- */
+
+function parseGrid(s) {
+  s = (s || '').trim();
+  if (!/^[A-Ra-r]{2}([0-9]{2}([A-Xa-x]{2})?)?$/.test(s)) return null;
+  s = s.toUpperCase();
+  let lon = (s.charCodeAt(0) - 65) * 20 - 180;
+  let lat = (s.charCodeAt(1) - 65) * 10 - 90;
+  if (s.length >= 4) {
+    lon += (+s[2]) * 2;
+    lat += (+s[3]) * 1;
+    if (s.length === 6) {
+      lon += (s.charCodeAt(4) - 65) * (2 / 24) + (1 / 24);
+      lat += (s.charCodeAt(5) - 65) * (1 / 24) + (0.5 / 24);
+    } else { lon += 1; lat += 0.5; }
+  } else { lon += 10; lat += 5; }
+  return { lat, lon };
+}
+
+function sunElevation(lat, lon, date) {
+  const rad = Math.PI / 180;
+  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
+  const doy = (date.getTime() - start) / 86400000;
+  const decl = 23.44 * Math.sin(2 * Math.PI * (284 + doy) / 365.25);
+  const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+  const solarTime = utcHours + lon / 15;
+  const hourAngle = (solarTime - 12) * 15;
+  const el = Math.asin(
+    Math.sin(lat * rad) * Math.sin(decl * rad) +
+    Math.cos(lat * rad) * Math.cos(decl * rad) * Math.cos(hourAngle * rad)
+  ) / rad;
+  return el;
+}
+
+function kmBetween(a, b) {
+  const rad = Math.PI / 180, R = 6371;
+  const dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
+  const h = Math.sin(dLat / 2) ** 2 +
+    Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function latLonToGrid(lat, lon) {
+  lat = Math.min(89.999, Math.max(-89.999, lat));
+  lon = ((lon + 180) % 360 + 360) % 360 - 180;
+  const A = 'ABCDEFGHIJKLMNOPQR';
+  const lo = lon + 180, la = lat + 90;
+  return A[Math.floor(lo / 20)] + A[Math.floor(la / 10)] +
+         Math.floor((lo % 20) / 2) + Math.floor(la % 10);
+}
+
+function neighborGrids(pos) {
+  // The user's own 4-char square first, then its 8 neighbors.
+  const set = new Set();
+  for (const dLat of [0, -1, 1])
+    for (const dLon of [0, -2, 2])
+      set.add(latLonToGrid(pos.lat + dLat, pos.lon + dLon));
+  return [...set];
+}
+
+const BAND_EDGES = [
+  ['160m', 1.8, 2.0], ['80m', 3.5, 4.0], ['40m', 7.0, 7.3],
+  ['30m', 10.1, 10.15], ['20m', 14.0, 14.35], ['17m', 18.068, 18.168],
+  ['15m', 21.0, 21.45], ['12m', 24.89, 24.99], ['10m', 28.0, 29.7],
+  ['6m', 50.0, 54.0],
+];
+function bandFromHz(hz) {
+  const f = +hz / 1e6;
+  for (const [nm, lo, hi] of BAND_EDGES) if (f >= lo && f <= hi) return nm;
+  return null;
+}
+
+/* ---------- data sources ---------- */
+
+async function getJSON(url) {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+async function fetchSFI() {
+  const d = await getJSON('https://services.swpc.noaa.gov/json/f107_cm_flux.json');
+  d.sort((a, b) => a.time_tag < b.time_tag ? -1 : 1);
+  for (let i = d.length - 1; i >= 0; i--) {
+    const v = +d[i].flux;
+    if (Number.isFinite(v) && v > 0) return Math.round(v);
+  }
+  throw new Error('no numeric flux in feed');
+}
+
+async function fetchKp() {
+  // Primary: 1-minute estimated Kp (clean JSON objects).
+  try {
+    const d = await getJSON('https://services.swpc.noaa.gov/json/planetary_k_index_1m.json');
+    for (let i = d.length - 1; i >= 0; i--) {
+      const v = +(d[i].estimated_kp ?? d[i].kp_index);
+      if (Number.isFinite(v)) return v;
+    }
+  } catch (e) { /* fall through to product feed */ }
+  // Fallback: product feed. Locate the Kp column from the header row and
+  // walk back past any null or blank rows.
+  const d = await getJSON('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json');
+  const header = (d[0] || []).map(h => String(h).toLowerCase());
+  let col = header.findIndex(h => h === 'kp' || h.includes('kp'));
+  if (col === -1) col = 1;
+  for (let i = d.length - 1; i >= 1; i--) {
+    const v = parseFloat(d[i][col]);
+    if (Number.isFinite(v)) return v;
+  }
+  throw new Error('no numeric Kp in feed');
+}
+
+async function fetchXray() {
+  const d = await getJSON('https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json');
+  const longband = d.filter(e => e.energy === '0.1-0.8nm');
+  const flux = +longband[longband.length - 1].flux;
+  let cls, mult;
+  if (flux >= 1e-4)      { cls = 'X' + (flux / 1e-4).toFixed(1); mult = 9; }
+  else if (flux >= 1e-5) { cls = 'M' + (flux / 1e-5).toFixed(1); mult = 3.5; }
+  else if (flux >= 1e-6) { cls = 'C' + (flux / 1e-6).toFixed(1); mult = 1.4; }
+  else if (flux >= 1e-7) { cls = 'B' + (flux / 1e-7).toFixed(1); mult = 1; }
+  else                   { cls = 'A'; mult = 1; }
+  return { cls, mult };
+}
+
+async function fetchIonosonde(pos) {
+  const d = await getJSON('https://prop.kc2g.com/api/stations.json');
+  const now = Date.now();
+  const fresh = d.filter(s =>
+    s.mufd != null && s.fof2 != null && s.time &&
+    (now - Date.parse(s.time)) < 100 * 60 * 1000 &&
+    s.station && s.station.latitude != null
+  );
+  let best = null, bestKm = Infinity;
+  for (const s of fresh) {
+    const km = kmBetween(pos, { lat: +s.station.latitude, lon: +s.station.longitude });
+    if (km < bestKm) { bestKm = km; best = s; }
+  }
+  if (!best || bestKm > 3500) throw new Error('no fresh ionosonde nearby');
+  return {
+    muf: +best.mufd, fof2: +best.fof2,
+    name: best.station.name, km: Math.round(bestKm),
+    ageMin: Math.round((now - Date.parse(best.time)) / 60000)
+  };
+}
+
+/* ---------- model ---------- */
+
+function estimateMUF(sfi, sunEl, kp) {
+  const day = 8 + 0.155 * sfi;
+  const night = 0.45 * day + 3.5;
+  const rad = Math.PI / 180;
+  const dayFrac = Math.min(1, Math.max(0, (Math.sin(sunEl * rad) + 0.12) / 0.62));
+  let muf = night + (day - night) * Math.pow(dayFrac, 0.7);
+  muf *= Math.max(0.7, 1 - 0.05 * Math.max(0, kp - 3));
+  return muf;
+}
+
+function estimateLUF(sunEl, flareMult) {
+  // Derived from the absorption gate, not modeled separately: the frequency
+  // where daytime D-layer loss alone would pull a band below fair (gate 0.3).
+  // Solving exp(-0.25 * s * (10/f)^2 * F) = 0.3 gives f = 4.56 * sqrt(s * F).
+  if (sunEl <= 0) return 0;
+  const s = Math.pow(Math.sin(sunEl * Math.PI / 180), 0.75);
+  return 4.56 * Math.sqrt(s * flareMult);
+}
+
+function scoreBand(band, ctx) {
+  const rad = Math.PI / 180;
+
+  // 1. MUF gate
+  const r = band.f / ctx.muf;
+  const m = r <= 0.82 ? 1 : Math.exp(-Math.pow((r - 0.82) / 0.16, 2));
+
+  // 2. D-layer absorption gate
+  let a = 1;
+  if (ctx.sunEl > 0) {
+    const sun = Math.pow(Math.sin(ctx.sunEl * rad), 0.75);
+    a = Math.exp(-0.25 * sun * Math.pow(10 / band.f, 2) * ctx.flareMult);
+  }
+
+  // 3. Geomagnetic gate
+  const latFactor = Math.min(1, Math.max(0.1, (Math.abs(ctx.lat) - 25) / 35));
+  const kpPenalty = Math.min(1, Math.max(0, (ctx.kp - 2) / 6));
+  const g = 1 - 0.55 * kpPenalty * latFactor * (band.f >= 14 ? 1 : 0.6);
+
+  // 4. Season gate (summer static on low bands, hemisphere-aware)
+  const month = new Date().getUTCMonth() + 1;
+  const summer = ctx.lat >= 0 ? (month >= 6 && month <= 8) : (month === 12 || month <= 2);
+  const n = (band.f < 11 && summer) ? 0.85 : 1;
+
+  let score = 100 * m * a * g * n;
+  if (band.es && ctx.muf < 40) score *= 0.25; // 6m: F2 closed, Es unknowable from indices
+  if (!Number.isFinite(score)) score = 0;
+
+  return { score: Math.max(0, Math.min(100, Math.round(score))), m, a, g, n };
+}
+
+function verdict(score) {
+  if (score >= 75) return ['OPEN', 's-open'];
+  if (score >= 50) return ['GOOD', 's-good'];
+  if (score >= 30) return ['FAIR', 's-fair'];
+  if (score >= 12) return ['POOR', 's-poor'];
+  return ['CLOSED', 's-closed'];
+}
+
+/* ---------- live spot layer (PSK Reporter) ---------- */
+
+let spots = [];        // { t, band, km, md }
+let lastCtx = null;
+let mqttClient = null, mqttGrids = '';
+let lastQsl = 0;
+
+// Bare wss on 1886 is the confirmed-working endpoint (sometimes slow to
+// answer, hence the generous timeout), so it leads. wss works from https and
+// file:// alike; plain ws is a last resort and only usable off-https.
+const MQTT_URLS = ['wss://mqtt.pskreporter.info:1886',
+                   'wss://mqtt.pskreporter.info:1886/mqtt']
+  .concat(location.protocol === 'https:' ? [] :
+    ['ws://mqtt.pskreporter.info:1886', 'ws://mqtt.pskreporter.info:1886/mqtt']);
+let goodUrl = null, cascadeActive = false;
+
+function pruneSpots() {
+  const cut = Date.now() - LIVE_WINDOW;
+  spots = spots.filter(s => s.t > cut);
+}
+
+function addSpot(band, gridA, gridB, mode) {
+  if (!BAND_BY_NAME[band]) return;
+  const a = parseGrid((gridA || '').slice(0, 4));
+  const b = parseGrid((gridB || '').slice(0, 4));
+  if (!a || !b) return;
+  spots.push({ t: Date.now(), band, km: kmBetween(a, b), md: mode || '' });
+}
+
+function liveStats(bandName, cwOnly) {
+  let n = 0, max = 0, cw = 0;
+  for (const x of spots) {
+    if (x.band !== bandName) continue;
+    if (x.md === 'CW') cw++;
+    if (cwOnly && x.md !== 'CW') continue;
+    n++;
+    if (x.km > max) max = x.km;
+  }
+  return { n, max, cw };
+}
+
+function liveScore(band, st) {
+  // Needs a few spots before we trust it, then activity plus reach, normalized
+  // per band. 1500 km on 160m is a great night; on 15m it is nothing.
+  if (st.n < 3) return null;
+  const activity = 1 - Math.exp(-st.n / 10);
+  const reach = Math.min(1, st.max / (REF_DIST[band.nm] || 5000));
+  return 100 * (0.45 * activity + 0.55 * reach);
+}
+
+function setLiveState(txt, cls) {
+  const el = $('mqttState');
+  el.textContent = txt;
+  el.className = 'lstate' + (cls ? ' ' + cls : '');
+}
+
+function subscribeGrids(c, grids) {
+  // topic: pskr/filter/v2/{band}/{mode}/{txcall}/{rxcall}/{txgrid4}/{rxgrid4}/{txdxcc}/{rxdxcc}
+  for (const g of grids) {
+    c.subscribe(`pskr/filter/v2/+/+/+/+/${g}/+/+/+`); // transmitted from our area
+    c.subscribe(`pskr/filter/v2/+/+/+/+/+/${g}/+/+`); // received in our area
+  }
+}
+
+function handleSpot(topic, payload) {
+  try {
+    const m = JSON.parse(payload.toString());
+    const band = (m.b && BAND_BY_NAME[String(m.b).toLowerCase()])
+      ? String(m.b).toLowerCase() : bandFromHz(m.f);
+    if (band) addSpot(band, m.sl, m.rl, String(m.md || '').toUpperCase());
+  } catch (e) { /* malformed spot, skip */ }
+}
+
+function connectLive(pos) {
+  if (!window.mqtt) {
+    setLiveState('mqtt.js failed to load. Scores are model only.', 'bad');
+    return;
+  }
+  const grids = neighborGrids(pos);
+  const key = grids.join(',');
+  if (key === mqttGrids && mqttClient && (mqttClient.connected || cascadeActive)) return;
+  if (mqttClient) { try { mqttClient.end(true); } catch (e) {} mqttClient = null; spots = []; }
+  mqttGrids = key;
+  const urls = goodUrl
+    ? [goodUrl, ...MQTT_URLS.filter(u => u !== goodUrl)]
+    : MQTT_URLS.slice();
+  attemptConnect(urls, grids);
+}
+
+function attemptConnect(urls, grids, round = 1) {
+  if (!urls.length) {
+    // Never give up: quick rounds at first, then a gentler cadence so we do
+    // not hammer the broker. Scores stay model only until the feed answers.
+    const delay = round < 3 ? 20 : 60;
+    setLiveState(`no answer on round ${round}. Retrying in ${delay} s; scores are model only meanwhile.`);
+    if (round === 3) {
+      $('qslNote').textContent =
+        'Three rounds without an answer. The broker accepts secure WebSockets from https pages, so a firewall on port 1886 or a broker outage is likely. Retries continue in the background.';
+    }
+    setTimeout(() => {
+      if (mqttGrids !== grids.join(',')) return;
+      const retry = goodUrl
+        ? [goodUrl, ...MQTT_URLS.filter(u => u !== goodUrl)]
+        : MQTT_URLS.slice();
+      attemptConnect(retry, grids, round + 1);
+    }, delay * 1000);
+    return;
+  }
+  cascadeActive = true;
+  const url = urls[0];
+  setLiveState(`trying ${url} (the broker can take up to 20 s)`);
+  const c = mqtt.connect(url, {
+    clientId: 'bandcond_' + Math.random().toString(16).slice(2, 10),
+    keepalive: 60, reconnectPeriod: 0, connectTimeout: 20000,
+  });
+  mqttClient = c;
+  let settled = false, wasConnected = false;
+  c.on('connect', () => {
+    settled = true; wasConnected = true;
+    goodUrl = url; cascadeActive = false;
+    setLiveState(`live: ${grids[0]} + ${grids.length - 1} neighbors via ${url.split('//')[1]}`, 'ok');
+    $('qslNote').textContent = '';
+    subscribeGrids(c, grids);
+  });
+  c.on('message', handleSpot);
+  const fail = () => {
+    if (mqttClient !== c) return;              // superseded by a newer attempt
+    if (wasConnected) {                        // an established link dropped
+      wasConnected = false;
+      setLiveState('link lost. Retrying in 15 s.');
+      setTimeout(() => {
+        if (mqttClient !== c) return;
+        try { c.end(true); } catch (e) {}
+        attemptConnect([goodUrl, ...MQTT_URLS.filter(u => u !== goodUrl)], grids);
+      }, 15000);
+      return;
+    }
+    if (settled) return;                       // this attempt already resolved
+    settled = true;
+    try { c.end(true); } catch (e) {}
+    attemptConnect(urls.slice(1), grids, round); // next candidate
+  };
+  c.on('error', fail);
+  c.on('close', fail);
+  c.on('offline', fail);
+}
+
+// JSONP callback for the retrieval API.
+window.pskrCb = function (data) {
+  const reps = (data && data.receptionReport) || [];
+  let added = 0;
+  for (const r of reps) {
+    const band = bandFromHz(r.frequency);
+    if (!band) continue;
+    addSpot(band, r.senderLocator, r.receiverLocator, String(r.mode || '').toUpperCase());
+    added++;
+  }
+  $('qslNote').textContent = added
+    ? `${added} reception reports from the last 30 min folded into the live layer`
+    : 'no reports found. Transmit a few FT8 or CW CQ cycles first.';
+  if (lastCtx) renderBands(lastCtx);
+};
+
+function queryMySpots() {
+  const call = $('mycall').value.trim().toUpperCase();
+  if (!call) { $('qslNote').textContent = 'enter your callsign first'; return; }
+  const wait = 5 * 60 * 1000 - (Date.now() - lastQsl);
+  if (wait > 0) {
+    $('qslNote').textContent =
+      `PSK Reporter allows one query every 5 minutes. ${Math.ceil(wait / 60000)} min to go.`;
+    return;
+  }
+  lastQsl = Date.now();
+  $('qslNote').textContent = 'querying';
+  const s = document.createElement('script');
+  s.src = 'https://retrieve.pskreporter.info/query?senderCallsign=' +
+    encodeURIComponent(call) + '&flowStartSeconds=-1800&rronly=1&callback=pskrCb';
+  s.onerror = () => { $('qslNote').textContent = 'query failed (blocked or rate limited)'; };
+  document.body.appendChild(s);
+}
+
+/* ---------- render ---------- */
+
+const $ = id => document.getElementById(id);
+
+function fieldTile(k, v, unit, srcClass, srcText) {
+  return `<div class="field"><div class="lbl">${k}</div>
+    <div class="val">${v}${unit ? ` <span class="unit">${unit}</span>` : ''}</div>
+    <div class="src ${srcClass}">${srcText}</div></div>`;
+}
+
+function renderBands(ctx) {
+  pruneSpots();
+  const cwEl = $('cwonly');
+  const cwOnly = !!(cwEl && cwEl.checked);
+  $('bands').innerHTML = BANDS.map(b => {
+    const s = scoreBand(b, ctx);
+    const st = liveStats(b.nm, cwOnly);
+    const lv = liveScore(b, st);
+    const score = lv == null ? s.score : Math.round(0.6 * lv + 0.4 * s.score);
+    const [word, cls] = verdict(score);
+    let facts = (b.es && ctx.muf < 40 && !st.n)
+      ? `Es dependent. Watch the band, not this number.`
+      : `MUF ratio <b>${(b.f / ctx.muf).toFixed(2)}</b> / ` +
+        `abs <b>${s.a.toFixed(2)}</b> / geo <b>${s.g.toFixed(2)}</b>`;
+    if (st.n) {
+      const plural = st.n > 1 ? 's' : '';
+      const modeBit = cwOnly
+        ? `<b>${st.n}</b> CW spot${plural}`
+        : `<b>${st.n}</b> spot${plural}${st.cw ? ` (${st.cw} CW)` : ''}`;
+      facts += ` / ${modeBit}, max <b>${Math.round(st.max).toLocaleString()}</b> km` +
+        (lv != null ? `, blended live` : `, model only`);
+    }
+    return `<div class="band">
+      <div class="id"><span class="nm">${b.nm}</span><span class="fq">${b.f.toFixed(2)} MHz</span></div>
+      <div>
+        <div class="track" role="img" aria-label="${b.nm} score ${score} of 100">
+          <div class="fill" style="width: ${score}%"></div>
+        </div>
+        <div class="facts">${facts}</div>
+      </div>
+      <div class="stampcell"><span class="stamp ${cls}">${word}</span><span class="pct">${score} / 100</span></div>
+    </div>`;
+  }).join('');
+}
+
+async function refresh() {
+  const pos = parseGrid($('grid').value);
+  const msg = $('msg');
+  msg.classList.remove('show');
+  if (!pos) {
+    msg.textContent = 'That does not parse as a Maidenhead locator. Try FN30 or FN30as.';
+    msg.classList.add('show');
+    return;
+  }
+
+  const now = new Date();
+  const sunEl = sunElevation(pos.lat, pos.lon, now);
+  try { history.replaceState(null, '', '#' + $('grid').value.trim().toUpperCase()); } catch (e) {}
+  $('clockline').textContent =
+    `${now.toUTCString().slice(5, 22)} UTC / ${pos.lat.toFixed(1)}\u00b0, ${pos.lon.toFixed(1)}\u00b0 / sun ${sunEl >= 0 ? '+' : ''}${sunEl.toFixed(0)}\u00b0 (${sunEl > 0 ? 'day' : 'night'})`;
+
+  $('status').innerHTML = fieldTile('Status', '&hellip;', '', 'est', 'fetching space weather');
+  $('bands').innerHTML = '';
+
+  const [sfiR, kpR, xrR, ionR] = await Promise.allSettled([
+    fetchSFI(), fetchKp(), fetchXray(), fetchIonosonde(pos)
+  ]);
+
+  // Treat "fulfilled but not a finite number" the same as a failed fetch,
+  // so one malformed field can never spoil the whole model.
+  const sfiOk = sfiR.status === 'fulfilled' && Number.isFinite(sfiR.value);
+  const kpOk  = kpR.status  === 'fulfilled' && Number.isFinite(kpR.value);
+  const xrOk  = xrR.status  === 'fulfilled' && Number.isFinite(xrR.value?.mult);
+  const ionOk = ionR.status === 'fulfilled' && Number.isFinite(ionR.value?.muf)
+             && Number.isFinite(ionR.value?.fof2);
+
+  const sfi = sfiOk ? sfiR.value : 120;
+  const kp  = kpOk  ? kpR.value  : 2;
+  const xr  = xrOk  ? xrR.value  : { cls: '?', mult: 1 };
+  const ion = ionOk ? ionR.value : null;
+
+  let muf = ion ? ion.muf : estimateMUF(sfi, sunEl, kp);
+  if (!Number.isFinite(muf) || muf <= 0) muf = estimateMUF(120, sunEl, 2);
+  const luf = estimateLUF(sunEl, xr.mult);
+
+  const tiles = [
+    fieldTile('SFI', sfi, 'sfu',
+      sfiOk ? 'ok' : 'bad',
+      sfiOk ? 'NOAA SWPC' : 'unavailable, assumed 120'),
+    fieldTile('Kp', kp.toFixed(1), '',
+      kpOk ? 'ok' : 'bad',
+      kpOk ? 'NOAA SWPC' : 'unavailable, assumed 2'),
+    fieldTile('X-ray', xr.cls, '',
+      xrOk ? 'ok' : 'bad',
+      xrOk ? 'GOES long band' : 'unavailable, quiet assumed'),
+    fieldTile('MUF(3000)', muf.toFixed(1), 'MHz',
+      ion ? 'ok' : 'est',
+      ion ? `${ion.name}, ${ion.km} km, ${ion.ageMin} min old`
+          : 'estimated from SFI and sun'),
+    fieldTile('LUF', luf < 1.8 ? 'below 160m' : luf.toFixed(1),
+      luf < 1.8 ? '' : 'MHz',
+      'est', 'from sun and X-ray flux'),
+  ];
+  if (ion) tiles.push(fieldTile('foF2', ion.fof2.toFixed(1), 'MHz', 'ok', 'NVIS critical freq'));
+  $('status').innerHTML = tiles.join('');
+
+  if (luf >= muf) {
+    msg.textContent =
+      `Estimated LUF (${luf.toFixed(1)} MHz) is at or above the MUF (${muf.toFixed(1)} MHz). That is a shortwave fadeout: expect sunlit HF paths to be closed on all bands until the flare subsides.`;
+    msg.classList.add('show');
+  }
+
+  if (!sfiOk && !kpOk && !xrOk && !ionOk) {
+    msg.textContent = 'No data source could be reached. If this is a sandboxed preview, save the file and open it directly in a browser.';
+    msg.classList.add('show');
+  }
+
+  lastCtx = { muf, kp, sunEl, lat: pos.lat, flareMult: xr.mult };
+  renderBands(lastCtx);
+  connectLive(pos);
+}
+
+$('go').addEventListener('click', refresh);
+$('grid').addEventListener('keydown', e => { if (e.key === 'Enter') refresh(); });
+$('qsl').addEventListener('click', queryMySpots);
+$('mycall').addEventListener('keydown', e => { if (e.key === 'Enter') queryMySpots(); });
+$('cwonly').addEventListener('change', () => { if (lastCtx) renderBands(lastCtx); });
+
+function applyTheme(dark) {
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  $('theme').textContent = dark ? 'Day mode' : 'Night mode';
+}
+let darkMode = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+applyTheme(darkMode);
+$('theme').addEventListener('click', () => { darkMode = !darkMode; applyTheme(darkMode); });
+
+// The grid travels in the URL, so a bookmark or shared link opens on the
+// right square. FN30 in the markup is only the fallback for a bare URL.
+const urlGrid = (new URLSearchParams(location.search).get('grid') ||
+                 location.hash.replace(/^#/, '')).trim();
+if (parseGrid(urlGrid)) $('grid').value = urlGrid.toUpperCase();
+
+refresh();
+setInterval(refresh, 10 * 60 * 1000);                              // space weather
+setInterval(() => { if (lastCtx) renderBands(lastCtx); }, 30000);  // live spots
+</script>
+</body>
+</html>
