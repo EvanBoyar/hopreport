@@ -1,0 +1,58 @@
+name: baseline
+# Samples the PSK Reporter feed on a cadence that covers every hour of the
+# day, folds each quiet-conditions window into the population baseline, and
+# force-pushes the result to the single-commit `data` branch. The page reads
+# baseline.json from that branch via raw.githubusercontent.com (which sends
+# CORS headers); if this workflow never runs, the page falls back to its
+# built-in constants and loses nothing but the population correction.
+
+# The minute (38) came from an actual random roll rejecting multiples of 5,
+# so the run avoids the top-of-hour pileups where scheduled workflows queue.
+on:
+  schedule:
+    - cron: '38 */3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: baseline
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Restore state from the data branch
+        run: |
+          mkdir -p data
+          git fetch origin data:refs/remotes/origin/data 2>/dev/null || true
+          git show origin/data:state.json > data/state.json 2>/dev/null || echo '{}' > data/state.json
+
+      - name: Install mqtt client
+        run: npm install --no-save mqtt
+
+      - name: Collect a sample
+        run: node tools/collect-baseline.js data/sample.json
+
+      - name: Fold into the baseline
+        run: node tools/aggregate-baseline.js data/state.json data/sample.json data/baseline.json
+
+      - name: Publish to the data branch
+        run: |
+          cd data
+          rm -f sample.json
+          git init -q -b data
+          git config user.name 'hopreport baseline'
+          git config user.email 'actions@users.noreply.github.com'
+          git add state.json baseline.json
+          git commit -qm "baseline $(date -u +%FT%TZ)"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" data

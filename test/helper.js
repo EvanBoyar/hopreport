@@ -44,11 +44,14 @@ function load() {
       bandFromHz, estimateMUF, estimateLUF, scoreBand, verdict,
       nthFullWeekendSat, activeContest, activityFactor,
       liveScore, liveStats, addSpot, pruneSpots, renderBands,
+      normalizedRate, baselineExpected,
       BANDS, LIVE_WINDOW,
       get spots() { return spots; },
       set spots(v) { spots = v; },
       get myGrids() { return myGrids; },
       set myGrids(v) { myGrids = v; },
+      get baselineData() { return baselineData; },
+      set baselineData(v) { baselineData = v; },
     };`;
   vm.runInContext(src + '\n;\n' + expose, sandbox, { filename: 'app-concat.js' });
   return { api: sandbox.__api, el, els, sandbox };

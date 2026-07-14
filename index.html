@@ -429,8 +429,17 @@
         model can be mixed freely, and with the model excluded a band shows no verdict until
         it collects three live spots. The feed skews toward FT8 monitors, so a
         band that is lively on SSB but quiet on digital and CW can still read low. The
-        Every spot is tagged by direction: &darr; means a monitor in your area heard it,
-        &uarr; means your area was heard elsewhere. Heard volume is weighted more heavily
+        Raw spot volume mostly measures how many operators live nearby, so a scheduled
+        collector samples the whole feed on quiet days (flares, storms, and contest
+        weekends are excluded, since lopsided events would masquerade as population) and
+        publishes each area's typical rate per band. Your neighborhood's score is then
+        judged against its own population-scaled bar rather than a universal constant,
+        and the facts line shows the deviation (1.8&times; usual). Because the bar is a
+        ratio to the typical active neighborhood measured at the same time, a solar
+        minimum lowers both sides together: a normally dead 10m still reads dead. If the
+        baseline is missing or your area is unknown to it, scoring falls back to the
+        universal constant. Every spot is tagged by direction: &darr; means a monitor in
+        your area heard it, &uarr; means your area was heard elsewhere. Heard volume is weighted more heavily
         than sent volume, because the local monitors are a fixed, always-on instrument while
         local transmitters come and go; the heard side also gets a flattened time-of-day
         correction, since the stations it hears follow many clocks, though mostly regional

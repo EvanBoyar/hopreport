@@ -248,25 +248,65 @@ function activityFactor(date, lat, lon) {
   };
 }
 
-function liveScore(band, st, act = null) {
+function normalizedRate(st, act) {
+  // The direction- and mode-weighted spot count. Heard volume (rx)
+  // outranks sent volume (tx): the local monitors are a fixed, always-on
+  // instrument while local transmitters come and go on whim, so tx
+  // silence says little. Each bucket is divided by its expected operator
+  // activity first, making the result a peak-equivalent rate.
+  const a = act || { digi: 1, cw: 1, rxDigi: 1, rxCw: 1 };
+  const TX_WEIGHT = 0.6;
+  const rxN = st.dRx / a.rxDigi + st.cRx / a.rxCw;
+  const txN = st.dTx / a.digi + st.cTx / a.cw;
+  return (rxN + TX_WEIGHT * txN) / ((1 + TX_WEIGHT) / 2);
+}
+
+/* ---------- population baseline ---------- */
+
+// Raw spot volume mostly measures how many operators live near a grid: a
+// city square out-spots a rural one on every band, open or closed. The
+// baseline workflow (.github/workflows/baseline.yml) samples the whole
+// feed on quiet days, corrects each square by the same diurnal curve used
+// above, and publishes per-square median rates plus each band's median
+// 9-square neighborhood rate as the reference. Scoring against the ratio
+// of the two cancels what population and climate share: a solar minimum
+// lowers every neighborhood and the reference together, so a dead 10m
+// still reads dead, while a Manhattan-sized spot pile reads as normal.
+// raw.githubusercontent.com sends CORS headers, so the file is readable
+// from anywhere the page runs, including file://.
+const BASELINE_URL =
+  'https://raw.githubusercontent.com/EvanBoyar/hopreport/data/baseline.json';
+
+function baselineExpected(data, grids, bandName) {
+  // Expected peak-equivalent spots/hour for this 9-square neighborhood
+  // plus the scoring denominator, or null when the baseline has nothing
+  // useful to say about the area.
+  const b = data && data.bands && data.bands[bandName];
+  if (!b || !b.ref || !b.squares) return null;
+  let sum = 0, hits = 0;
+  for (const g of grids) {
+    const v = b.squares[g];
+    if (v != null) { sum += v; hits++; }
+  }
+  if (!hits || sum <= 0) return null;
+  // Clamped so a degenerate baseline can never pin a band open or shut.
+  return { expected: sum, ref: 40 * Math.min(6, Math.max(0.2, sum / b.ref)) };
+}
+
+function liveScore(band, st, act = null, ref = null) {
   // Needs a few spots before we trust it, then activity plus reach, normalized
   // per band. 1500 km on 160m is a great night; on 15m it is nothing.
   // Counts are normalized per mode and per direction by expected operator
   // activity before they are scored: 6 spots at 04 local outrank 20 at 20
   // local, and a pile of CW spots during CQ WW CW is business as usual,
-  // not an opening. Heard volume (rx) outranks sent volume (tx): the local
-  // monitors are a fixed, always-on instrument, while local transmitters
-  // come and go on whim, so tx silence says little. Reach is left alone;
-  // max distance is propagation's doing, not the operators'. Calibration:
-  // 40 spots/hour at evening-peak activity reads the same as 10 spots did
-  // over the old 15 minute window.
+  // not an opening. Reach is left alone; max distance is propagation's
+  // doing, not the operators'. The denominator is the population-scaled
+  // reference when the baseline knows the area, else the universal 40:
+  // 40 normalized spots/hour at evening peak reads the same as 10 spots
+  // did over the old 15 minute window.
   if (st.n < 3) return null;
-  const a = act || { digi: 1, cw: 1, rxDigi: 1, rxCw: 1 };
-  const TX_WEIGHT = 0.6;
-  const rxN = st.dRx / a.rxDigi + st.cRx / a.rxCw;
-  const txN = st.dTx / a.digi + st.cTx / a.cw;
-  const nEff = (rxN + TX_WEIGHT * txN) / ((1 + TX_WEIGHT) / 2);
-  const activity = 1 - Math.exp(-nEff / 40);
+  const nEff = normalizedRate(st, act);
+  const activity = 1 - Math.exp(-nEff / (ref || 40));
   const reach = Math.min(1, st.max / (REF_DIST[band.nm] || 5000));
   return 100 * (0.45 * activity + 0.55 * reach);
 }

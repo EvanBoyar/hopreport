@@ -12,16 +12,29 @@ function fieldTile(k, v, unit, srcClass, srcText) {
     <div class="src ${srcClass}">${srcText}</div></div>`;
 }
 
+let baselineData = null;
+async function loadBaseline() {
+  try { baselineData = await getJSON(BASELINE_URL); }
+  catch (e) { /* absent or unreachable: scores fall back to the constant */ }
+  if (lastCtx) renderBands(lastCtx);
+}
+
 function renderBands(ctx) {
   pruneSpots();
   const inc = id => { const el = $(id); return !!(el && el.checked); };
   const useDigi = inc('incDigi'), useCw = inc('incCw'), useModel = inc('incModel');
-  const act = activityFactor(new Date(),
-    Number.isFinite(ctx.lat) ? ctx.lat : 0, Number.isFinite(ctx.lon) ? ctx.lon : 0);
+  const lat = Number.isFinite(ctx.lat) ? ctx.lat : 0;
+  const lon = Number.isFinite(ctx.lon) ? ctx.lon : 0;
+  const act = activityFactor(new Date(), lat, lon);
+  // The population baseline speaks the default view's language (all
+  // sources, both directions), so a filtered view falls back to the
+  // universal constant rather than compare unlike quantities.
+  const grids = (useDigi && useCw && baselineData) ? neighborGrids({ lat, lon }) : null;
   $('bands').innerHTML = BANDS.map(b => {
     const s = scoreBand(b, ctx);
     const st = liveStats(b.nm, useDigi, useCw);
-    const lv = (useDigi || useCw) ? liveScore(b, st, act) : null;
+    const bl = grids ? baselineExpected(baselineData, grids, b.nm) : null;
+    const lv = (useDigi || useCw) ? liveScore(b, st, act, bl ? bl.ref : null) : null;
     // With the model excluded, a band scores on live spots alone and shows
     // no verdict until it has enough of them.
     const score = useModel
@@ -39,9 +52,14 @@ function renderBands(ctx) {
         : `<b>${st.n}</b> spot${plural}${useCw && st.cw ? ` (${st.cw} CW)` : ''}`;
       const rxN = st.dRx + st.cRx, txN = st.dTx + st.cTx;
       const dirBit = `<span title="heard in your area / your area heard elsewhere">↓${rxN} ↑${txN}</span>`;
+      let devBit = '';
+      if (bl) {
+        const dev = normalizedRate(st, act) / bl.expected;
+        devBit = ` (<b>${dev >= 10 ? Math.round(dev) : dev.toFixed(1)}×</b> usual)`;
+      }
       const tail = lv != null ? (useModel ? 'blended live' : 'live only')
                               : (useModel ? 'model only' : 'needs 3 spots');
-      facts += ` / ${modeBit} ${dirBit}, max <b>${Math.round(st.max).toLocaleString()}</b> km, ${tail}`;
+      facts += ` / ${modeBit} ${dirBit}${devBit}, max <b>${Math.round(st.max).toLocaleString()}</b> km, ${tail}`;
     }
     return `<div class="band">
       <div class="id"><span class="nm">${b.nm}</span><span class="fq">${b.f.toFixed(2)} MHz</span></div>
@@ -174,5 +192,7 @@ if (parseGrid(urlGrid)) {
 }
 
 refresh();
+loadBaseline();
 setInterval(refresh, 10 * 60 * 1000);                              // space weather
 setInterval(() => { if (lastCtx) renderBands(lastCtx); }, 30000);  // live spots
+setInterval(loadBaseline, 6 * 60 * 60 * 1000);                     // population baseline
