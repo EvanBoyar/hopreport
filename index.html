@@ -146,6 +146,7 @@
   .lstate { color: var(--ink); }
   .lstate.ok { color: var(--green); }
   .lstate.bad { color: var(--red); }
+  .srcbox { display: flex; align-items: center; gap: 11px; }
   .cwbox {
     display: flex; align-items: center; gap: 5px; cursor: pointer;
     font-weight: 700; letter-spacing: 0.06em; user-select: none;
@@ -202,12 +203,14 @@
     text-transform: uppercase;
     border: 2px solid currentColor; border-radius: 3px;
     padding: 2px 8px 1px 10px;
+    white-space: nowrap;
     transform: rotate(-5deg);
     opacity: 0.88;
   }
   .band:nth-child(2n) .stamp { transform: rotate(-8deg); }
   .band:nth-child(3n) .stamp { transform: rotate(-3deg); }
   .pct { display: block; font-size: 10px; color: var(--faded); margin-top: 2px; }
+  .s-none { color: var(--faded); }
   .s-open { color: var(--green); }
   .s-good { color: var(--blue); }
   .s-fair { color: var(--ochre); }
@@ -271,23 +274,33 @@
     </header>
 
     <hr class="heavy">
-    <div class="fields" id="status" aria-live="polite"></div>
-    <hr class="light">
 
     <div class="liveline">
       <span class="lbl">Live spots</span>
       <span id="mqttState" class="lstate">starting</span>
-      <label class="cwbox"><input type="checkbox" id="cwonly"> CW only</label>
       <span class="gap"></span>
-      <input id="mycall" placeholder="MYCALL" maxlength="12" spellcheck="false" autocomplete="off" aria-label="Your callsign">
-      <button id="qsl" class="ghost">Where was I heard?</button>
-      <span id="qslNote" class="note"></span>
+      <span class="srcbox" role="group" aria-label="Sources counted in the scores">
+        <span class="lbl">Count</span>
+        <label class="cwbox"><input type="checkbox" id="incDigi" checked> digi</label>
+        <label class="cwbox"><input type="checkbox" id="incCw" checked> CW</label>
+        <label class="cwbox"><input type="checkbox" id="incModel" checked> model</label>
+      </span>
     </div>
     <hr class="light">
 
     <div class="msg" id="msg"></div>
 
     <div class="bands" id="bands"></div>
+
+    <hr class="heavy">
+    <div class="fields" id="status" aria-live="polite"></div>
+    <hr class="light">
+
+    <div class="liveline">
+      <input id="mycall" placeholder="MYCALL" maxlength="12" spellcheck="false" autocomplete="off" aria-label="Your callsign">
+      <button id="qsl" class="ghost">Where was I heard?</button>
+      <span id="qslNote" class="note"></span>
+    </div>
 
     <details class="notes">
       <summary>Notes on method<span class="hint">tap to open</span></summary>
@@ -315,12 +328,21 @@
       <p>
         The live layer subscribes to PSK Reporter's public MQTT feed over WebSockets, filtered
         to spots transmitted from or received in your grid square and its eight neighbors,
-        kept in a rolling 15 minute window. Once a band collects three or more spots, its
+        kept for a rolling hour, aged by when each spot was heard rather than when it
+        arrived. The feed carries no history, so the window fills gradually after the page
+        opens. Once a band collects three or more spots, its
         displayed score becomes 0.6 live + 0.4 model, where the live score combines spot count
-        with maximum distance normalized for each band. Measured reality outvotes the
+        with maximum distance normalized for each band. The spot count is first weighed
+        against expected operator activity for the local solar time and day of week, since
+        the networks go quiet in the small hours and run hot on contest weekends: a handful
+        of spots at 4 am counts for more than the same handful at 8 pm. The activity curve
+        is an estimate (trough near 4 am at about 15% of the evening peak, weekends about
+        35% busier); the reporting networks chart these cycles but publish no hard ratios. Measured reality outvotes the
         prediction in both directions. CW spots arrive through the same feed because PSK
-        Reporter ingests the Reverse Beacon Network's skimmer spots, and the CW only switch
-        rescores the live layer from those alone. The feed skews toward FT8 monitors, so a
+        Reporter ingests the Reverse Beacon Network's skimmer spots. The count switches above
+        the log choose what feeds each score: digital spots, CW spots, and the computed
+        model can be mixed freely, and with the model excluded a band shows no verdict until
+        it collects three live spots. The feed skews toward FT8 monitors, so a
         band that is lively on SSB but quiet on digital and CW can still read low. The
         callsign query folds your own reception reports in through the retrieval API, limited
         to one query every five minutes under PSK Reporter's rules. If every source fails at
@@ -350,7 +372,7 @@ const BAND_BY_NAME = Object.fromEntries(BANDS.map(b => [b.nm, b]));
 const REF_DIST = { '160m': 1500, '80m': 2000, '40m': 3500, '30m': 4000,
                    '20m': 6000, '17m': 6000, '15m': 6000, '12m': 6000,
                    '10m': 6000, '6m': 2000 };
-const LIVE_WINDOW = 15 * 60 * 1000;
+const LIVE_WINDOW = 60 * 60 * 1000;
 
 /* ---------- geometry ---------- */
 
@@ -582,31 +604,69 @@ function pruneSpots() {
   spots = spots.filter(s => s.t > cut);
 }
 
-function addSpot(band, gridA, gridB, mode) {
+function addSpot(band, gridA, gridB, mode, heardMs) {
   if (!BAND_BY_NAME[band]) return;
+  const now = Date.now();
+  // Age by when the spot was heard (MQTT t, retrieval flowStartSeconds),
+  // not when it reached us; clamp reporter clock skew into the present.
+  const t = Math.min(Number.isFinite(heardMs) && heardMs > 0 ? heardMs : now, now);
+  if (t <= now - LIVE_WINDOW) return;
   const a = parseGrid((gridA || '').slice(0, 4));
   const b = parseGrid((gridB || '').slice(0, 4));
   if (!a || !b) return;
-  spots.push({ t: Date.now(), band, km: kmBetween(a, b), md: mode || '' });
+  const km = kmBetween(a, b), md = mode || '';
+  // The retrieval query re-delivers the same reports on every 5 minute
+  // poll; over an hour window they would otherwise count many times.
+  if (spots.some(s => s.t === t && s.band === band && s.km === km && s.md === md)) return;
+  spots.push({ t, band, km, md });
 }
 
-function liveStats(bandName, cwOnly) {
+function liveStats(bandName, useDigi, useCw) {
+  // CW spots reach the feed through RBN's skimmers; the CW switch gates
+  // them and the digi switch gates every other mode.
   let n = 0, max = 0, cw = 0;
   for (const x of spots) {
     if (x.band !== bandName) continue;
-    if (x.md === 'CW') cw++;
-    if (cwOnly && x.md !== 'CW') continue;
+    const isCw = x.md === 'CW';
+    if (isCw) cw++;
+    if (isCw ? !useCw : !useDigi) continue;
     n++;
     if (x.km > max) max = x.km;
   }
   return { n, max, cw };
 }
 
-function liveScore(band, st) {
+// Spot volume tracks who is awake and keying up, not just the ionosphere:
+// the reporting networks bottom out in the small hours of local night and
+// peak in the evening, and weekends run hotter (contests live there). The
+// public statistics (ft8spots.com day-of-week plots, PSK Reporter's hourly
+// report counts) show the cycle plainly but publish no hard ratios, so this
+// curve is a documented estimate: trough ~0.15 of peak near 04 local,
+// daytime plateau ~0.7, peak 19-21 local, weekends x1.35.
+const DIURNAL = [0.55, 0.35, 0.22, 0.16, 0.15, 0.18, 0.28, 0.42,
+                 0.55, 0.65, 0.70, 0.72, 0.72, 0.70, 0.68, 0.68,
+                 0.72, 0.80, 0.90, 1.00, 1.00, 0.95, 0.85, 0.70];
+
+function activityFactor(date, lon) {
+  // Mean solar time stands in for the operators' clocks; spots are local
+  // to the grid neighborhood, so the user's longitude serves for all.
+  const h = ((date.getTime() / 3600000 + lon / 15) % 24 + 24) % 24;
+  const i = Math.floor(h) % 24, f = h - Math.floor(h);
+  const base = DIURNAL[i] * (1 - f) + DIURNAL[(i + 1) % 24] * f;
+  const dow = new Date(date.getTime() + (lon / 15) * 3600000).getUTCDay();
+  return base * (dow === 0 || dow === 6 ? 1.35 : 1);
+}
+
+function liveScore(band, st, act = 1) {
   // Needs a few spots before we trust it, then activity plus reach, normalized
   // per band. 1500 km on 160m is a great night; on 15m it is nothing.
+  // The count is normalized by expected operator activity before it is
+  // scored: 6 spots at 04 local outrank 20 at 20 local. Reach is left
+  // alone; max distance is propagation's doing, not the operators'.
+  // Calibration: 40 spots/hour at evening-peak activity reads the same as
+  // 10 spots did over the old 15 minute window.
   if (st.n < 3) return null;
-  const activity = 1 - Math.exp(-st.n / 10);
+  const activity = 1 - Math.exp(-(st.n / act) / 40);
   const reach = Math.min(1, st.max / (REF_DIST[band.nm] || 5000));
   return 100 * (0.45 * activity + 0.55 * reach);
 }
@@ -630,7 +690,7 @@ function handleSpot(topic, payload) {
     const m = JSON.parse(payload.toString());
     const band = (m.b && BAND_BY_NAME[String(m.b).toLowerCase()])
       ? String(m.b).toLowerCase() : bandFromHz(m.f);
-    if (band) addSpot(band, m.sl, m.rl, String(m.md || '').toUpperCase());
+    if (band) addSpot(band, m.sl, m.rl, String(m.md || '').toUpperCase(), Number(m.t) * 1000);
   } catch (e) { /* malformed spot, skip */ }
 }
 
@@ -715,11 +775,12 @@ window.pskrCb = function (data) {
   for (const r of reps) {
     const band = bandFromHz(r.frequency);
     if (!band) continue;
-    addSpot(band, r.senderLocator, r.receiverLocator, String(r.mode || '').toUpperCase());
+    addSpot(band, r.senderLocator, r.receiverLocator, String(r.mode || '').toUpperCase(),
+      Number(r.flowStartSeconds) * 1000);
     added++;
   }
   $('qslNote').textContent = added
-    ? `${added} reception reports from the last 30 min folded into the live layer`
+    ? `${added} reception reports from the last hour folded into the live layer`
     : 'no reports found. Transmit a few FT8 or CW CQ cycles first.';
   if (lastCtx) renderBands(lastCtx);
 };
@@ -737,7 +798,7 @@ function queryMySpots() {
   $('qslNote').textContent = 'querying';
   const s = document.createElement('script');
   s.src = 'https://retrieve.pskreporter.info/query?senderCallsign=' +
-    encodeURIComponent(call) + '&flowStartSeconds=-1800&rronly=1&callback=pskrCb';
+    encodeURIComponent(call) + '&flowStartSeconds=-3600&rronly=1&callback=pskrCb';
   s.onerror = () => { $('qslNote').textContent = 'query failed (blocked or rate limited)'; };
   document.body.appendChild(s);
 }
@@ -754,35 +815,41 @@ function fieldTile(k, v, unit, srcClass, srcText) {
 
 function renderBands(ctx) {
   pruneSpots();
-  const cwEl = $('cwonly');
-  const cwOnly = !!(cwEl && cwEl.checked);
+  const inc = id => { const el = $(id); return !!(el && el.checked); };
+  const useDigi = inc('incDigi'), useCw = inc('incCw'), useModel = inc('incModel');
+  const act = activityFactor(new Date(), Number.isFinite(ctx.lon) ? ctx.lon : 0);
   $('bands').innerHTML = BANDS.map(b => {
     const s = scoreBand(b, ctx);
-    const st = liveStats(b.nm, cwOnly);
-    const lv = liveScore(b, st);
-    const score = lv == null ? s.score : Math.round(0.6 * lv + 0.4 * s.score);
-    const [word, cls] = verdict(score);
+    const st = liveStats(b.nm, useDigi, useCw);
+    const lv = (useDigi || useCw) ? liveScore(b, st, act) : null;
+    // With the model excluded, a band scores on live spots alone and shows
+    // no verdict until it has enough of them.
+    const score = useModel
+      ? (lv == null ? s.score : Math.round(0.6 * lv + 0.4 * s.score))
+      : (lv == null ? null : Math.round(lv));
+    const [word, cls] = score == null ? [st.n ? 'sparse' : 'quiet', 's-none'] : verdict(score);
     let facts = (b.es && ctx.muf < 40 && !st.n)
       ? `Es dependent. Watch the band, not this number.`
       : `MUF ratio <b>${(b.f / ctx.muf).toFixed(2)}</b> / ` +
         `abs <b>${s.a.toFixed(2)}</b> / geo <b>${s.g.toFixed(2)}</b>`;
     if (st.n) {
       const plural = st.n > 1 ? 's' : '';
-      const modeBit = cwOnly
+      const modeBit = !useDigi
         ? `<b>${st.n}</b> CW spot${plural}`
-        : `<b>${st.n}</b> spot${plural}${st.cw ? ` (${st.cw} CW)` : ''}`;
-      facts += ` / ${modeBit}, max <b>${Math.round(st.max).toLocaleString()}</b> km` +
-        (lv != null ? `, blended live` : `, model only`);
+        : `<b>${st.n}</b> spot${plural}${useCw && st.cw ? ` (${st.cw} CW)` : ''}`;
+      const tail = lv != null ? (useModel ? 'blended live' : 'live only')
+                              : (useModel ? 'model only' : 'needs 3 spots');
+      facts += ` / ${modeBit}, max <b>${Math.round(st.max).toLocaleString()}</b> km, ${tail}`;
     }
     return `<div class="band">
       <div class="id"><span class="nm">${b.nm}</span><span class="fq">${b.f.toFixed(2)} MHz</span></div>
       <div>
-        <div class="track" role="img" aria-label="${b.nm} score ${score} of 100">
-          <div class="fill" style="width: ${score}%"></div>
+        <div class="track" role="img" aria-label="${b.nm} ${score == null ? 'awaiting live spots' : `score ${score} of 100`}">
+          <div class="fill" style="width: ${score == null ? 0 : score}%"></div>
         </div>
         <div class="facts">${facts}</div>
       </div>
-      <div class="stampcell"><span class="stamp ${cls}">${word}</span><span class="pct">${score} / 100</span></div>
+      <div class="stampcell"><span class="stamp ${cls}">${word}</span><span class="pct">${score == null ? `${st.n} of 3 spots` : `${score} / 100`}</span></div>
     </div>`;
   }).join('');
 }
@@ -862,7 +929,7 @@ async function refresh() {
     msg.classList.add('show');
   }
 
-  lastCtx = { muf, kp, sunEl, lat: pos.lat, flareMult: xr.mult };
+  lastCtx = { muf, kp, sunEl, lat: pos.lat, lon: pos.lon, flareMult: xr.mult };
   renderBands(lastCtx);
   connectLive(pos);
 }
@@ -871,7 +938,8 @@ $('go').addEventListener('click', refresh);
 $('grid').addEventListener('keydown', e => { if (e.key === 'Enter') refresh(); });
 $('qsl').addEventListener('click', queryMySpots);
 $('mycall').addEventListener('keydown', e => { if (e.key === 'Enter') queryMySpots(); });
-$('cwonly').addEventListener('change', () => { if (lastCtx) renderBands(lastCtx); });
+for (const id of ['incDigi', 'incCw', 'incModel'])
+  $(id).addEventListener('change', () => { if (lastCtx) renderBands(lastCtx); });
 
 function applyTheme(dark) {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
