@@ -449,7 +449,10 @@
         for an hour after loading, and the live share of the blend ramps up with coverage.
         Reports folded in by the callsign query already carry a full hour of history and
         are counted without that scaling; leaving the page open genuinely sharpens the
-        scores as the window fills. Once a band collects three or more spots, its
+        scores as the window fills. The window also survives a reload: this browser keeps
+        the spots and restores them when the page reopens on the same grid, and the time
+        the tab spent closed counts as uncovered, exactly like a dropped link.
+        Once a band collects three or more spots, its
         displayed score becomes up to 0.6 live + 0.4 model, where the live score combines
         spot rate with reach normalized for each band; reach is judged by the
         second-longest spot, so one mangled locator in the feed cannot hold a band open. The spot count is first weighed

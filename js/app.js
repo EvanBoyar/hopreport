@@ -123,6 +123,7 @@ function renderBands(ctx) {
   const lede = $('lede');
   lede.innerHTML = ledeHTML(summary, ctx);
   lede.hidden = !lede.innerHTML;
+  saveSpots();
 }
 
 async function refresh() {
@@ -279,6 +280,12 @@ if (parseGrid(urlGrid)) {
   },
   { maximumAge: 10 * 60 * 1000, timeout: 10000 });
 }
+
+// Phones rarely fire unload events; the hidden state is the reliable
+// last chance to persist the window before the tab is culled.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveSpots();
+});
 
 refresh();
 loadBaseline();

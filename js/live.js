@@ -6,10 +6,13 @@ const LIVE_WINDOW = 60 * 60 * 1000;
 
 /* ---------- live spot layer (PSK Reporter) ---------- */
 
-let spots = [];        // { t, band, km, md, rx, who, src }
+let spots = [];        // { t, band, km, md, rx, who, tp, src }
 let lastCtx = null;
 let mqttClient = null, mqttGrids = '';
+// The retrieval limit survives reloads so a refresh cannot be used to
+// query PSK Reporter more often than its rules allow.
 let lastQsl = 0;
+try { lastQsl = +localStorage.getItem('hopQslAt') || 0; } catch (e) {}
 let myGrids = new Set();   // current 4-char square + neighbors, for direction tagging
 let liveSince = 0;         // when the current window started filling (0 = no feed yet)
 let lostAt = 0;            // when an established link dropped (0 = link healthy)
@@ -26,6 +29,46 @@ let goodUrl = null, cascadeActive = false;
 function pruneSpots() {
   const cut = Date.now() - LIVE_WINDOW;
   spots = spots.filter(s => s.t > cut);
+}
+
+/* ---------- persistence: a reload keeps the hour window ---------- */
+
+const SPOTS_KEY = 'hopSpots';
+let restoredKey = '';
+
+function saveSpots() {
+  // Serialized on every render tick and when the tab hides: cheap, and
+  // it means a reload starts from the evidence it already had instead
+  // of an empty window.
+  if (!mqttGrids && !spots.length) return;
+  try {
+    localStorage.setItem(SPOTS_KEY, JSON.stringify({
+      gridKey: mqttGrids, savedAt: Date.now(), liveSince, spots,
+    }));
+  } catch (e) { /* storage full or unavailable: persistence is a bonus */ }
+}
+
+function restoreSpots(key) {
+  // Coverage survives as an amount, not a place: the old session covered
+  // [liveSince, savedAt], only the part still inside the rolling hour
+  // counts, and the closed-tab gap is uncovered time exactly like a
+  // dropped link. The estimator downstream only ever divides counts by
+  // covered time, so no scoring logic changes.
+  if (restoredKey === key) return;
+  restoredKey = key;
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(SPOTS_KEY)); } catch (e) {}
+  if (!d || d.gridKey !== key || !Array.isArray(d.spots)) return;
+  const now = Date.now();
+  const gap = now - d.savedAt;
+  if (!(gap >= 0) || gap >= LIVE_WINDOW) return;   // all aged out, or clock skew
+  const cut = now - LIVE_WINDOW;
+  spots = d.spots.filter(s =>
+    s && Number.isFinite(s.t) && s.t > cut && BAND_BY_NAME[s.band]);
+  if (d.liveSince) {
+    const covered = Math.min(Math.max(0, d.savedAt - d.liveSince), LIVE_WINDOW - gap);
+    liveSince = now - covered;
+  }
 }
 
 function addSpot(band, gridA, gridB, mode, heardMs, txCall, rxCall, src) {
@@ -138,14 +181,15 @@ function handleSpot(topic, payload) {
 function connectLive(pos) {
   const grids = neighborGrids(pos);
   myGrids = new Set(grids);   // before any bail-out: retrieval spots need it too
-  if (!window.mqtt) {
-    setLiveState('mqtt.js failed to load. Scores are model only.', 'bad');
-    return;
-  }
   const key = grids.join(',');
   if (key === mqttGrids && mqttClient && (mqttClient.connected || cascadeActive)) return;
   if (mqttClient) { try { mqttClient.end(true); } catch (e) {} mqttClient = null; spots = []; liveSince = 0; lostAt = 0; }
   mqttGrids = key;
+  restoreSpots(key);   // before the mqtt bail-out: a broker-less page still keeps its window
+  if (!window.mqtt) {
+    setLiveState('mqtt.js failed to load. Scores are model only.', 'bad');
+    return;
+  }
   const urls = goodUrl
     ? [goodUrl, ...MQTT_URLS.filter(u => u !== goodUrl)]
     : MQTT_URLS.slice();
@@ -244,6 +288,7 @@ function queryMySpots() {
     return;
   }
   lastQsl = Date.now();
+  try { localStorage.setItem('hopQslAt', String(lastQsl)); } catch (e) {}
   $('qslNote').textContent = 'querying';
   const s = document.createElement('script');
   s.src = 'https://retrieve.pskreporter.info/query?senderCallsign=' +
