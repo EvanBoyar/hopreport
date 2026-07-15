@@ -316,7 +316,11 @@
     .band .fq { font-size: 9px; letter-spacing: 0; white-space: nowrap; }
     .stamp { font-size: 10px; letter-spacing: 0.13em; padding: 2px 6px 1px 8px; }
     .gridform { margin-left: 0; }
-    header { padding-right: 50px; }
+    /* No reserved corner on the whole header on phones, so the grid form
+       below keeps the full width; only the title row, which shares the
+       switch's row, clears it. */
+    header { padding-right: 0; }
+    .titleline { padding-right: 44px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .fill { transition: none; }
