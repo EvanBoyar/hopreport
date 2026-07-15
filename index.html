@@ -322,7 +322,15 @@
     .band .nm { font-size: 16px; }
     .band .fq { font-size: 9px; letter-spacing: 0; white-space: nowrap; }
     .stamp { font-size: 10px; letter-spacing: 0.13em; padding: 2px 6px 1px 8px; }
-    .gridform { margin-left: 0; }
+    /* The grid row must fit beside the checkboxes on a 360px phone, so
+       everything slims down and the standalone label goes: the input's
+       placeholder and aria-label carry the field's name. */
+    .gridform { margin-left: 0; gap: 8px; }
+    .gridform > label { display: none; }
+    #grid { width: 84px; font-size: 17px; }
+    .gridform .srcbox { margin-left: 0; gap: 8px; }
+    .cwbox { gap: 4px; }
+    button { padding: 7px 10px; }
     /* Only the title row shares the switch's row on phones; it alone
        clears the corner. */
     .titleline { padding-right: 44px; }
