@@ -19,6 +19,24 @@ const REF_DIST = { '160m': 1500, '80m': 2000, '40m': 3500, '30m': 4000,
                    '20m': 6000, '17m': 6000, '15m': 6000, '12m': 6000,
                    '10m': 6000, '6m': 2000 };
 
+// A pair closer than this is treated as ground wave rather than an
+// ionospheric hop, and never enters any sky count. Surface wave
+// attenuation grows with frequency, so the radius shrinks up the bands.
+// The 6m figure is the sporadic-E floor instead: nothing under it is
+// surface wave, but nothing under it is the sky either. Distances are
+// between 4-char square centers (the same square reads as 0 km, each of
+// the 8 neighbors under ~222 km), so the values carry about a square of
+// quantization slack. Shared by the live layer and the baseline
+// collector, which must agree.
+const MIN_SKY_KM = { '160m': 350, '80m': 300, '40m': 250, '30m': 250,
+                     '20m': 200, '17m': 200, '15m': 150, '12m': 150,
+                     '10m': 150, '6m': 500 };
+// 6m only: under LOS_KM a spot is line of sight and dropped; between
+// LOS_KM and the band's MIN_SKY_KM it is troposphere, kept apart from
+// the sky counts and tallied on its own, because a tropo opening is
+// real news on 6m even though it says nothing about the ionosphere.
+const LOS_KM = 150;
+
 const BAND_EDGES = [
   ['160m', 1.8, 2.0], ['80m', 3.5, 4.0], ['40m', 7.0, 7.3],
   ['30m', 10.1, 10.15], ['20m', 14.0, 14.35], ['17m', 18.068, 18.168],
@@ -157,6 +175,27 @@ function scoreBand(band, ctx) {
   return { score: Math.max(0, Math.min(100, Math.round(score))), m, a, g, n };
 }
 
+function bandRangeList(names) {
+  // Names a set of bands the way an operator would: three or more
+  // contiguous bands collapse to a range with the shortest wavelength
+  // first (12m-40m), pairs and singles are listed. Input order and
+  // duplicates do not matter.
+  const idx = [...new Set(names.map(nm => BANDS.findIndex(b => b.nm === nm)))]
+    .filter(i => i >= 0).sort((a, b) => a - b);
+  const out = [];
+  for (let s = 0, i = 1; i <= idx.length; i++) {
+    if (i === idx.length || idx[i] !== idx[i - 1] + 1) {
+      const run = idx.slice(s, i);
+      if (run.length >= 3) out.push(`${BANDS[run[run.length - 1]].nm}-${BANDS[run[0]].nm}`);
+      else out.push(...run.map(j => BANDS[j].nm));
+      s = i;
+    }
+  }
+  return out.length > 1
+    ? out.slice(0, -1).join(', ') + ' and ' + out[out.length - 1]
+    : (out[0] || '');
+}
+
 function verdict(score) {
   if (score >= 75) return ['OPEN', 's-open'];
   if (score >= 50) return ['GOOD', 's-good'];
@@ -184,16 +223,18 @@ const DIURNAL = [0.55, 0.35, 0.22, 0.16, 0.15, 0.18, 0.28, 0.42,
 // majors are absent on purpose, since phone barely reaches this feed. cw
 // and digi say how many times hotter than a normal weekday evening each
 // side of the feed runs; na marks events that matter only in the Americas.
+// h is the start hour UTC on the Saturday and len the length in hours,
+// both from each contest's published rules.
 const CONTESTS = [
-  { nm: 'ARRL RTTY Roundup',    m: 0,  wk: 1,  cw: 1,   digi: 2, na: false },
-  { nm: 'ARRL DX CW',           m: 1,  wk: 3,  cw: 3,   digi: 1, na: false },
-  { nm: 'CQ WPX CW',            m: 4,  wk: -1, cw: 3.5, digi: 1, na: false },
-  { nm: 'ARRL Field Day',       m: 5,  wk: 4,  cw: 3,   digi: 2, na: true  },
-  { nm: 'IARU HF Championship', m: 6,  wk: 2,  cw: 2.5, digi: 1, na: false },
-  { nm: 'World Wide Digi DX',   m: 7,  wk: -1, cw: 1,   digi: 2, na: false },
-  { nm: 'CQ WW RTTY',           m: 8,  wk: -1, cw: 1,   digi: 2, na: false },
-  { nm: 'ARRL Sweepstakes CW',  m: 10, wk: 1,  cw: 2.5, digi: 1, na: true  },
-  { nm: 'CQ WW CW',             m: 10, wk: -1, cw: 4,   digi: 1, na: false },
+  { nm: 'ARRL RTTY Roundup',    m: 0,  wk: 1,  h: 18, len: 30, cw: 1,   digi: 2, na: false },
+  { nm: 'ARRL DX CW',           m: 1,  wk: 3,  h: 0,  len: 48, cw: 3,   digi: 1, na: false },
+  { nm: 'CQ WPX CW',            m: 4,  wk: -1, h: 0,  len: 48, cw: 3.5, digi: 1, na: false },
+  { nm: 'ARRL Field Day',       m: 5,  wk: 4,  h: 18, len: 27, cw: 3,   digi: 2, na: true  },
+  { nm: 'IARU HF Championship', m: 6,  wk: 2,  h: 12, len: 24, cw: 2.5, digi: 1, na: false },
+  { nm: 'World Wide Digi DX',   m: 7,  wk: -1, h: 12, len: 24, cw: 1,   digi: 2, na: false },
+  { nm: 'CQ WW RTTY',           m: 8,  wk: -1, h: 0,  len: 48, cw: 1,   digi: 2, na: false },
+  { nm: 'ARRL Sweepstakes CW',  m: 10, wk: 1,  h: 21, len: 30, cw: 2.5, digi: 1, na: true  },
+  { nm: 'CQ WW CW',             m: 10, wk: -1, h: 0,  len: 48, cw: 4,   digi: 1, na: false },
 ];
 
 function nthFullWeekendSat(year, month, nth) {
@@ -218,8 +259,8 @@ function activeContest(date, lat, lon) {
     if (c.m !== m || (c.na && !inNA)) continue;
     const sat = nthFullWeekendSat(y, c.m, c.wk);
     if (!sat) continue;
-    const start = Date.UTC(y, c.m, sat);           // 0000Z Saturday
-    if (t < start || t >= start + 48 * 3600000) continue;
+    const start = Date.UTC(y, c.m, sat) + c.h * 3600000;
+    if (t < start || t >= start + c.len * 3600000) continue;
     if (!best || c.cw + c.digi > best.cw + best.digi) best = c;
   }
   return best;
@@ -249,15 +290,18 @@ function activityFactor(date, lat, lon) {
 }
 
 function normalizedRate(st, act) {
-  // The direction- and mode-weighted spot count. Heard volume (rx)
-  // outranks sent volume (tx): the local monitors are a fixed, always-on
-  // instrument while local transmitters come and go on whim, so tx
-  // silence says little. Each bucket is divided by its expected operator
-  // activity first, making the result a peak-equivalent rate.
+  // The direction- and mode-weighted spots-per-hour rate. Heard volume
+  // (rx) outranks sent volume (tx): the local monitors are a fixed,
+  // always-on instrument while local transmitters come and go on whim,
+  // so tx silence says little. The coverage-weighted counts from
+  // liveStats (already extrapolated per source) are preferred; raw
+  // counts stand in when a caller supplies only those. Each bucket is
+  // divided by its expected operator activity, making the result a
+  // peak-equivalent rate.
   const a = act || { digi: 1, cw: 1, rxDigi: 1, rxCw: 1 };
   const TX_WEIGHT = 0.6;
-  const rxN = st.dRx / a.rxDigi + st.cRx / a.rxCw;
-  const txN = st.dTx / a.digi + st.cTx / a.cw;
+  const rxN = (st.wdRx ?? st.dRx) / a.rxDigi + (st.wcRx ?? st.cRx) / a.rxCw;
+  const txN = (st.wdTx ?? st.dTx) / a.digi + (st.wcTx ?? st.cTx) / a.cw;
   return (rxN + TX_WEIGHT * txN) / ((1 + TX_WEIGHT) / 2);
 }
 
@@ -293,25 +337,24 @@ function baselineExpected(data, grids, bandName) {
   return { expected: sum, ref: 40 * Math.min(6, Math.max(0.2, sum / b.ref)) };
 }
 
-function liveScore(band, st, act = null, ref = null, fill = 1) {
+function liveScore(band, st, act = null, ref = null) {
   // Needs a few spots before we trust it, then activity plus reach, normalized
   // per band. 1500 km on 160m is a great night; on 15m it is nothing.
-  // Counts are normalized per mode and per direction by expected operator
-  // activity before they are scored: 6 spots at 04 local outrank 20 at 20
-  // local, and a pile of CW spots during CQ WW CW is business as usual,
-  // not an opening. Reach is left alone; max distance is propagation's
-  // doing, not the operators'. The denominator is the population-scaled
-  // reference when the baseline knows the area, else the universal 40:
-  // 40 normalized spots/hour at evening peak reads the same as 10 spots
-  // did over the old 15 minute window.
-  //
-  // fill is the filled fraction of the hour window (the feed has no
-  // history, so a fresh page has only minutes of spots). Counts scale to
-  // a per-hour rate so bands do not appear to improve as the window
-  // fills; the floor caps the extrapolation at x12 (5 minutes of data).
+  // Counts arrive coverage-weighted from liveStats (a partial window is
+  // extrapolated to a per-hour rate there, per source) and are normalized
+  // per mode and per direction by expected operator activity before they
+  // are scored: 6 spots at 04 local outrank 20 at 20 local, and a pile
+  // of CW spots during CQ WW CW is business as usual, not an opening.
+  // Reach is left alone otherwise; distance is propagation's doing, not
+  // the operators'. It is judged by the second-longest spot so a single
+  // mangled locator in the feed cannot hold a band open for an hour.
+  // The denominator is the population-scaled reference when the baseline
+  // knows the area, else the universal 40: 40 normalized spots/hour at
+  // evening peak reads the same as 10 spots did over the old 15 minute
+  // window.
   if (st.n < 3) return null;
-  const nEff = normalizedRate(st, act) / Math.max(1 / 12, Math.min(1, fill));
+  const nEff = normalizedRate(st, act);
   const activity = 1 - Math.exp(-nEff / (ref || 40));
-  const reach = Math.min(1, st.max / (REF_DIST[band.nm] || 5000));
+  const reach = Math.min(1, (st.max2 ?? st.max) / (REF_DIST[band.nm] || 5000));
   return 100 * (0.45 * activity + 0.55 * reach);
 }

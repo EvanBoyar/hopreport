@@ -3,9 +3,10 @@
 // baseline: node tools/aggregate-baseline.js state.json sample.json baseline.json
 //
 // Each square's sample is the direction-weighted rate (rx + 0.6 tx, the
-// same weights the page scores with), scaled to spots/hour and divided by
-// the page's own diurnal curve at that square's longitude, making samples
-// from different hours comparable. State keeps a short reservoir per
+// same weights the page scores with), each direction divided by the same
+// diurnal curve the page divides it by (rx by the flattened one) at that
+// square's longitude and scaled to spots/hour, making samples from
+// different hours comparable. State keeps a short reservoir per
 // square/band and the published value is its MEDIAN, so a lone odd window
 // that slipped past the collector's gates gets shrugged off rather than
 // averaged in. The published reference per band is the median 9-square
@@ -19,6 +20,10 @@ const RESERVOIR = 15;      // samples kept per square/band (~2 days at 8/day)
 const MIN_SAMPLES = 6;     // seen this often before a square is published
 const MIN_GLOBAL = 100;    // spots a band needs in a window to be usable
 const TX_WEIGHT = 0.6;
+// Bumped whenever the units of a reservoir sample change (the ground-wave
+// filter and the split rx/tx normalization both did); stale reservoirs in
+// old units are dropped rather than averaged against new ones.
+const STATE_V = 2;
 
 function median(a) {
   const s = [...a].sort((x, y) => x - y);
@@ -28,6 +33,7 @@ function median(a) {
 
 function fold(state, sample) {
   state.reservoirs ??= {};
+  if (state.v !== STATE_V) { state.reservoirs = {}; state.v = STATE_V; }
   state.nSamples = (state.nSamples || 0) + 1;
   state.updated = sample.t;
   if (sample.skipped) return state;
@@ -38,13 +44,15 @@ function fold(state, sample) {
     for (const [sq, [tx, rx]] of Object.entries(data.squares)) {
       const pos = lib.parseGrid(sq);
       if (!pos) continue;
-      const weighted = (rx + TX_WEIGHT * tx) / ((1 + TX_WEIGHT) / 2);
-      const perHour = weighted * 3600 / sample.secs;
       // lat 0 keeps the na-only contest branch out; contests are already
-      // excluded at collection, so only diurnal and weekend remain.
-      const act = lib.activityFactor(when, 0, pos.lon).digi;
+      // excluded at collection, so only diurnal and weekend remain. The
+      // split is the same one the page's normalizedRate applies: rx by
+      // the flattened curve, tx by the full one. Samples are contest
+      // gated, so the digi curve stands in for every mode.
+      const act = lib.activityFactor(when, 0, pos.lon);
+      const norm = (rx / act.rxDigi + TX_WEIGHT * (tx / act.digi)) / ((1 + TX_WEIGHT) / 2);
       const r = res[sq] ??= [];
-      r.push(Math.round(perHour / act * 10) / 10);
+      r.push(Math.round(norm * 3600 / sample.secs * 10) / 10);
       if (r.length > RESERVOIR) r.shift();
     }
   }
@@ -85,4 +93,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { fold, publish, median, RESERVOIR, MIN_SAMPLES, MIN_GLOBAL };
+module.exports = { fold, publish, median, RESERVOIR, MIN_SAMPLES, MIN_GLOBAL, STATE_V };

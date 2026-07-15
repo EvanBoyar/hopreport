@@ -37,8 +37,58 @@ test('direction tagging: rx when our neighborhood heard it', () => {
   api.myGrids = new Set(['FN30', 'FN31', 'FN20']);
   api.addSpot('20m', 'IO91', 'FN30', 'FT8', Date.now() - 1000);      // heard here
   api.addSpot('20m', 'FN31', 'JN48', 'FT8', Date.now() - 2000);      // heard elsewhere
-  api.addSpot('20m', 'FN20', 'FN30', 'CW', Date.now() - 3000);       // both local -> rx
-  assert.deepStrictEqual(Array.from(api.spots, s => s.rx), [true, false, true]);
+  assert.deepStrictEqual(Array.from(api.spots, s => s.rx), [true, false]);
+});
+
+test('ground wave never enters the window, with a per-band radius', () => {
+  const { api } = load();
+  api.myGrids = new Set(['FN30']);
+  const t = Date.now() - 1000;
+  api.addSpot('10m', 'FN30', 'FN30', 'FT8', t);        // same square, 0 km
+  api.addSpot('10m', 'FN30', 'FN31', 'FT8', t);        // ~111 km, inside every radius
+  api.addSpot('10m', 'FN30as', 'FN30ax', 'FT8', t);    // 6-char grids collapse to 4
+  api.addSpot('40m', 'FN30', 'FN32', 'FT8', t);        // ~222 km, ground wave on 40m
+  api.addSpot('160m', 'FN30', 'FN33', 'CW', t);        // ~334 km, ground wave on 160m
+  assert.strictEqual(api.spots.length, 0);
+  api.addSpot('10m', 'FN30', 'FN32', 'FT8', t);        // ~222 km, a hop on 10m
+  api.addSpot('40m', 'FN30', 'FN33', 'FT8', t);        // ~334 km, a hop on 40m
+  api.addSpot('160m', 'FN30', 'FN34', 'CW', t);        // ~445 km, a hop on 160m
+  assert.strictEqual(api.spots.length, 3);
+  assert.ok(api.spots.every(s => s.km >= api.MIN_SKY_KM[s.band]));
+});
+
+test('6m splits its near field: line of sight dropped, tropo kept apart', () => {
+  const { api } = load();
+  api.myGrids = new Set(['FN30']);
+  const t = Date.now() - 1000;
+  api.addSpot('6m', 'FN30', 'FN30', 'FT8', t);    // same square, line of sight
+  api.addSpot('6m', 'FN30', 'FN31', 'FT8', t);    // ~111 km, line of sight
+  api.addSpot('6m', 'FN30', 'FN33', 'FT8', t);    // ~334 km, tropo
+  api.addSpot('6m', 'FN30', 'FN55', 'FT8', t);    // ~640 km, sky (Es)
+  assert.strictEqual(api.spots.length, 2);
+  const st = api.liveStats('6m', true, true, 1);
+  assert.strictEqual(st.n, 1, 'only the Es spot counts as sky');
+  assert.ok(st.max > 500, 'sky reach comes from the Es spot');
+  assert.strictEqual(st.tN, 1, 'the tropo spot rides its own tally');
+  assert.ok(st.tMax > 250 && st.tMax < 500);
+});
+
+test('callsigns keep same-second spots from different stations apart', () => {
+  const { api } = load();
+  const t = Date.now() - 60000;
+  api.addSpot('20m', 'FN30', 'IO91', 'FT8', t, 'K2A', 'G4X');
+  api.addSpot('20m', 'FN30', 'IO91', 'FT8', t, 'K2B', 'G4X');   // different tx, same squares
+  api.addSpot('20m', 'FN30', 'IO91', 'FT8', t, 'K2A', 'G4X');   // a true duplicate
+  assert.strictEqual(api.spots.length, 2);
+});
+
+test('retrieval flows dedup fuzzily against spots heard live', () => {
+  const { api } = load();
+  const t = Date.now() - 20 * 60 * 1000;
+  api.addSpot('20m', 'FN30', 'IO91', 'FT8', t, 'K2A', 'G4X');
+  api.addSpot('20m', 'FN30', 'IO91', 'FT8', t + 4 * 60000, 'K2A', 'G4X', 'r'); // same flow, offset clock
+  api.addSpot('20m', 'FN30', 'IO91', 'FT8', t + 4 * 60000, 'K2A', 'G4Y', 'r'); // different receiver
+  assert.strictEqual(api.spots.length, 2);
 });
 
 test('liveStats buckets by mode and direction, honoring the toggles', () => {

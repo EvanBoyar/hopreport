@@ -55,6 +55,18 @@ test('CW annotation disappears when CW spots are excluded', () => {
   assert.match(r, /5<\/b> spots/);
 });
 
+test('6m surfaces tropo spots in the facts without scoring them', () => {
+  const { api, el } = load();
+  api.myGrids = new Set(['FN30']);
+  const t = Date.now();
+  for (let i = 0; i < 3; i++)
+    api.addSpot('6m', 'FN30', 'FN33', 'FT8', t - i * 60000 - 1000, 'K' + i, 'W2X');
+  api.renderBands(CTX);
+  const r = row(el, '6m');
+  assert.match(r, /tropo <b>3<\/b> spots/);
+  assert.match(r, /Es dependent/, 'tropo alone earns no sky verdict');
+});
+
 test('all sources off renders every band without a score', () => {
   const { api, el, els } = seeded();
   els.incDigi.checked = els.incCw.checked = els.incModel.checked = false;

@@ -40,6 +40,14 @@ test('neighborGrids returns own square first plus 8 neighbors', () => {
   assert.ok(g.includes('FN20') && g.includes('FM39') && g.includes('FN41'));
 });
 
+test('sunElevation includes the equation of time', () => {
+  // In early November true solar noon at Greenwich runs about 16 minutes
+  // ahead of mean noon, so the sun stands higher at 11:44 than at 12:00.
+  const early = new Date(Date.UTC(2025, 10, 3, 11, 44));
+  const mean = new Date(Date.UTC(2025, 10, 3, 12, 0));
+  assert.ok(api.sunElevation(51.5, 0, early) > api.sunElevation(51.5, 0, mean));
+});
+
 test('bandFromHz maps edges correctly', () => {
   assert.strictEqual(api.bandFromHz(14074000), '20m');
   assert.strictEqual(api.bandFromHz(7074000), '40m');

@@ -77,12 +77,16 @@ async function main() {
     try {
       const m = JSON.parse(payload.toString());
       const b = bands[current];
+      const gs = String(m.sl || '').slice(0, 4).toUpperCase();
+      const gr = String(m.rl || '').slice(0, 4).toUpperCase();
+      const ps = lib.parseGrid(gs), pr = lib.parseGrid(gr);
+      // Same rule the page applies in addSpot: pairs inside the band's
+      // ground-wave radius are not propagation, and the baseline must
+      // count the same population the page counts.
+      if (ps && pr && lib.kmBetween(ps, pr) < lib.MIN_SKY_KM[current]) return;
       b.global++;
-      for (const [grid, k] of [[m.sl, 0], [m.rl, 1]]) {
-        const g = String(grid || '').slice(0, 4).toUpperCase();
-        if (!lib.parseGrid(g)) continue;
-        (b.squares[g] ??= [0, 0])[k]++;
-      }
+      if (ps) (b.squares[gs] ??= [0, 0])[0]++;
+      if (pr) (b.squares[gr] ??= [0, 0])[1]++;
     } catch (e) { /* malformed spot, skip */ }
   });
 

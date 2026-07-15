@@ -6,7 +6,7 @@
 <title>The Hop Report</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><style>.k{fill:%23fcfbf6}.v{fill:%231c2434}.o{fill:%232c5697}.w{fill:%232a6a9b}.g{fill:%232e7c4f}.h{stroke:%2323211c}.s{fill:%23be3b2e}@media(prefers-color-scheme:dark){.k{fill:%2315293f}.v{fill:%23060b12}.o{fill:%237fa8dc}.w{fill:%233d7fb5}.g{fill:%236fbe8b}.h{stroke:%23dce8f2}.s{fill:%23e0685c}}</style><clipPath id='r'><rect width='64' height='64' rx='10'/></clipPath><clipPath id='e'><path d='M 0 56 Q 32 47 64 56 L 64 64 L 0 64 Z'/></clipPath><g clip-path='url(%23r)'><rect class='k' width='64' height='64'/><path class='v' d='M 0 0 L 64 0 L 64 18 Q 32 8 0 18 Z'/><path class='o' d='M 0 18 Q 32 8 64 18 L 64 22 Q 32 12 0 22 Z'/><path class='o' opacity='0.55' d='M 0 38 Q 32 28 64 38 L 64 41 Q 32 31 0 41 Z'/><path class='w' d='M 0 56 Q 32 47 64 56 L 64 64 L 0 64 Z'/><g clip-path='url(%23e)'><ellipse class='g' cx='13' cy='58' rx='12' ry='9'/><ellipse class='g' cx='51' cy='58' rx='12' ry='9'/></g><path class='h' d='M 12 53 Q 32 -12 52 53' fill='none' stroke-width='5.5' stroke-linecap='round'/><circle class='s' cx='12' cy='53' r='5.5'/><circle class='s' cx='52' cy='53' r='5.5'/></g></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;600;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;700&family=League+Spartan:wght@700;800&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
 <style>
   :root {
@@ -30,8 +30,8 @@
     --am2: #2c5697;
     --icon-space: #1c2434;
     --icon-ocean: #2a6a9b;
-    --type: 'Courier Prime', 'Courier New', monospace;
-    --slab: 'Zilla Slab', 'Rockwell', serif;
+    --type: 'Hanken Grotesk', 'Gill Sans', sans-serif;
+    --display: 'League Spartan', 'Futura', 'Century Gothic', sans-serif;
     color-scheme: light;
   }
   :root[data-theme="dark"] {
@@ -88,8 +88,8 @@
   .mark:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
   .titleline { display: flex; align-items: center; gap: 9px; }
   h1 {
-    font-family: var(--slab); font-weight: 700; font-size: 27px;
-    letter-spacing: 0.01em; line-height: 1.05;
+    font-family: var(--display); font-weight: 800; font-size: 25px;
+    letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.05;
   }
   /* day/night switch: a little sun or moon crossing a pill-shaped sky */
   .themebtn {
@@ -120,11 +120,19 @@
   .byline:hover { color: var(--ink); }
   .byline:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
   .dateline { font-size: 12px; color: var(--faded); margin-top: 3px; }
+  .grey {
+    color: var(--ochre); font-weight: 700; font-size: 10.5px;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .lede {
+    font-size: 13px; line-height: 1.5;
+    margin: 7px 0 2px; max-width: 74ch;
+  }
   .gridform { margin-left: auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 9px; }
   .gridform .srcbox { margin-left: 6px; align-self: center; }
   .gridform label {
-    font-family: var(--slab); font-weight: 600; font-size: 12px;
-    letter-spacing: 0.12em; color: var(--faded);
+    font-family: var(--display); font-weight: 700; font-size: 12px;
+    letter-spacing: 0.15em; color: var(--faded);
   }
   .gridform input {
     font-family: var(--type); font-weight: 700; font-size: 19px;
@@ -136,7 +144,7 @@
   .gridform input:focus { outline: 2px solid var(--blue); outline-offset: 2px; }
   .gridform input::placeholder { color: var(--faded); font-weight: 400; opacity: 0.65; }
   button {
-    font-family: var(--type); font-weight: 700; font-size: 12px;
+    font-family: var(--display); font-weight: 700; font-size: 12px;
     letter-spacing: 0.1em; text-transform: uppercase;
     background: var(--ink); color: var(--paper);
     border: 1px solid var(--ink); border-radius: 2px;
@@ -152,18 +160,22 @@
 
   /* ---- report fields ---- */
   .fields {
-    display: flex; flex-wrap: wrap; gap: 5px 26px;
+    display: flex; flex-wrap: wrap; gap: 5px 10px;
     padding: 9px 0 8px;
   }
-  .field { min-width: 108px; }
+  /* Sized so all eight tiles (foF2 present) hold one row on desktop: the
+     max-width makes long source lines wrap inside their tile instead of
+     widening it, and grow lets a shorter row breathe back out. */
+  .field { flex: 1 1 auto; min-width: 0; max-width: 108px; }
   .field .lbl {
-    font-family: var(--slab); font-weight: 600; font-size: 11px;
-    letter-spacing: 0.13em; text-transform: uppercase; color: var(--faded);
+    font-family: var(--display); font-weight: 700; font-size: 11px;
+    letter-spacing: 0.15em; text-transform: uppercase; color: var(--faded);
   }
   .field .val {
-    font-size: 17px; font-weight: 700; margin-top: 1px;
+    font-size: 16px; font-weight: 700; margin-top: 1px;
     border-bottom: 1px dotted var(--rule-mid);
-    display: inline-block; min-width: 70px; padding: 0 2px 1px;
+    display: inline-block; min-width: 56px; padding: 0 2px 1px;
+    white-space: nowrap;
   }
   .field .val .unit { font-size: 11px; font-weight: 400; color: var(--faded); }
   .field .src { font-size: 10.5px; margin-top: 2px; }
@@ -177,8 +189,8 @@
     padding: 7px 0; font-size: 12px;
   }
   .liveline .lbl {
-    font-family: var(--slab); font-weight: 600; font-size: 12px;
-    letter-spacing: 0.13em; text-transform: uppercase; color: var(--faded);
+    font-family: var(--display); font-weight: 700; font-size: 12px;
+    letter-spacing: 0.15em; text-transform: uppercase; color: var(--faded);
   }
   .liveline { border-bottom: 1px solid var(--rule); }
   .liveline[hidden] { display: none; }
@@ -221,7 +233,7 @@
   }
   .band:last-child { border-bottom: none; }
   .band .id { text-align: right; }
-  .band .nm { font-family: var(--slab); font-weight: 700; font-size: 19px; line-height: 1; }
+  .band .nm { font-family: var(--display); font-weight: 700; font-size: 19px; line-height: 1; }
   .band .fq { display: block; font-size: 10.5px; color: var(--faded); margin-top: 2px; }
   .track {
     height: 12px; border: 1px solid var(--rule-mid); background: var(--paper);
@@ -239,7 +251,8 @@
   .stampcell { text-align: center; }
   .stamp {
     display: inline-block;
-    font-weight: 700; font-size: 12px; letter-spacing: 0.2em;
+    font-family: var(--display);
+    font-weight: 700; font-size: 12px; letter-spacing: 0.22em;
     text-transform: uppercase;
     border: 2px solid currentColor; border-radius: 3px;
     padding: 2px 8px 1px 10px;
@@ -262,8 +275,8 @@
   .notes summary {
     list-style: none; cursor: pointer; user-select: none;
     display: flex; align-items: baseline; gap: 9px;
-    font-family: var(--slab); font-weight: 700; font-size: 13px;
-    letter-spacing: 0.13em; text-transform: uppercase;
+    font-family: var(--display); font-weight: 700; font-size: 13px;
+    letter-spacing: 0.15em; text-transform: uppercase;
   }
   .notes summary::-webkit-details-marker { display: none; }
   .notes summary::before {
@@ -285,6 +298,13 @@
 
   @media (max-width: 620px) {
     .inner { padding: 14px 14px 18px; }
+    /* Tighter masthead: mark, title, and dateline share a row so the lede
+       and more of the log land above the fold. */
+    header { gap: 6px 10px; }
+    .mark svg { width: 30px; height: 30px; }
+    h1 { font-size: 19px; }
+    .dateline { font-size: 11px; }
+    .lede { font-size: 12.5px; }
     .band { grid-template-columns: 50px 1fr 76px; gap: 10px; }
     .band .nm { font-size: 16px; }
     .band .fq { font-size: 9px; letter-spacing: 0; white-space: nowrap; }
@@ -359,6 +379,8 @@
       </button>
     </header>
 
+    <p class="lede" id="lede" hidden></p>
+
     <hr class="heavy">
 
     <div class="liveline" id="liveline" hidden>
@@ -399,6 +421,11 @@
         frequency where daytime D-layer loss alone would pull a band below fair. It is shown
         for orientation and never feeds the scores a second time, since each band's absorption
         factor already contains it. A real LUF also depends on your power, antenna, and mode.
+        The sentence under the masthead is written from the same scores: the open bands
+        (three or more contiguous bands collapse to a range like 12m-40m), the longest spot
+        heard among them, and the next sun crossing when one half of the spectrum is waiting
+        on it. The dateline flags greyline whenever the sun sits within 6 degrees of the
+        horizon, since the terminator is when the low bands do their best work.
         Weak-signal modes such as FT8 dig well below the figure shown, which is why live spots
         can appear under it. When the LUF climbs past the MUF during a strong flare, the page
         flags a shortwave fadeout.
@@ -407,12 +434,27 @@
         The live layer subscribes to PSK Reporter's public MQTT feed over WebSockets, filtered
         to spots transmitted from or received in your grid square and its eight neighbors,
         kept for a rolling hour, aged by when each spot was heard rather than when it
-        arrived. The feed carries no history, so the window fills gradually after the page
+        arrived. A spot whose two ends sit closer than the band's ground-wave radius
+        (350&nbsp;km on 160&nbsp;m shrinking to 150&nbsp;km on 10&nbsp;m, between square
+        centers, since surface-wave reach falls as frequency rises) is discarded, because
+        a signal that never touched the ionosphere says nothing about the bands; the
+        baseline collector applies the same rule so the two sides stay comparable.
+        6&nbsp;m splits its near field instead: under 150&nbsp;km is line of sight and
+        discarded, 150 to 500&nbsp;km is troposphere and appears in the facts line as its
+        own tropo tally (real news on that band, though it says nothing about the
+        ionosphere and never feeds the score), and only spots past the sporadic-E floor
+        of 500&nbsp;km count as sky. The
+        feed carries no history, so the window fills gradually after the page
         opens; counts are scaled to the filled fraction so bands do not appear to improve
         for an hour after loading, and the live share of the blend ramps up with coverage.
-        Once a band collects three or more spots, its
+        Reports folded in by the callsign query already carry a full hour of history and
+        are counted without that scaling.
+        While that first hour fills, the live spots line above the log counts the window
+        up, because leaving the page open genuinely sharpens the scores; the line retires
+        once the window is full. Once a band collects three or more spots, its
         displayed score becomes up to 0.6 live + 0.4 model, where the live score combines
-        spot rate with maximum distance normalized for each band. The spot count is first weighed
+        spot rate with reach normalized for each band; reach is judged by the
+        second-longest spot, so one mangled locator in the feed cannot hold a band open. The spot count is first weighed
         against expected operator activity for the local solar time and day of week, since
         the networks go quiet in the small hours and run hot on contest weekends: a handful
         of spots at 4 am counts for more than the same handful at 8 pm. The activity curve

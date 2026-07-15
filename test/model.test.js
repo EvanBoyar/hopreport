@@ -24,6 +24,12 @@ test('contest activation windows and region gating', () => {
   assert.strictEqual(api.activeContest(ww, ...DE)?.nm, 'CQ WW CW'); // global
   assert.strictEqual(api.activeContest(new Date(Date.UTC(2026, 10, 25)), ...DE), null);
   assert.strictEqual(api.activeContest(new Date(Date.UTC(2026, 10, 30, 1)), ...DE), null);
+  // Start hours are honored: Field Day begins 1800Z Saturday, IARU ends
+  // 1200Z Sunday.
+  assert.strictEqual(api.activeContest(new Date(Date.UTC(2026, 5, 27, 12)), ...NY), null);
+  assert.strictEqual(api.activeContest(new Date(Date.UTC(2026, 6, 12, 11)), ...DE)?.nm,
+    'IARU HF Championship');
+  assert.strictEqual(api.activeContest(new Date(Date.UTC(2026, 6, 12, 13)), ...DE), null);
 });
 
 test('diurnal curve: trough at 4am, peak at 8pm, weekend boost', () => {
@@ -64,6 +70,19 @@ test('liveScore: 3-spot floor and night spots outranking evening crowds', () => 
   const night = api.activityFactor(new Date(Date.UTC(2026, 6, 14, 9)), ...NY);
   const eve = api.activityFactor(new Date(Date.UTC(2026, 6, 15, 1)), ...NY);
   assert.ok(api.liveScore(b20, st, night) > api.liveScore(b20, st, eve));
+});
+
+test('reach is judged by the second-longest spot', () => {
+  const { api } = load();
+  api.myGrids = new Set(['FN30']);
+  const t = Date.now();
+  api.addSpot('20m', 'IO91', 'FN30', 'FT8', t - 1000, 'G4A', 'K2A');
+  api.addSpot('20m', 'IO91', 'FN30', 'FT8', t - 2000, 'G4B', 'K2A');
+  api.addSpot('20m', 'RE79', 'FN30', 'FT8', t - 3000, 'ZL9X', 'K2A');   // lone far outlier
+  const st = api.liveStats('20m', true, true, 1);
+  assert.ok(st.max > st.max2, 'the outlier holds the max');
+  assert.strictEqual(api.liveScore(b20, st), api.liveScore(b20, { ...st, max: 99999 }),
+    'the score keys on the second-longest spot');
 });
 
 test('scoreBand stays within 0..100 and gates multiply', () => {

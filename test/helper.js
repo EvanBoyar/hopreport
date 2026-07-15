@@ -6,7 +6,8 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-function load() {
+function load(opts = {}) {
+  const store = opts.store || {};   // shared across load() calls to mimic revisits
   const els = {};
   const el = id => els[id] ??= {
     id, value: '', checked: true, innerHTML: '', textContent: '',
@@ -28,7 +29,17 @@ function load() {
     location: { protocol: 'file:', search: '', hash: '' },
     history: { replaceState() {} },
     matchMedia: () => ({ matches: false }),
-    navigator: {},
+    localStorage: {
+      getItem: k => (k in store ? store[k] : null),
+      setItem: (k, v) => { store[k] = String(v); },
+    },
+    // getCurrentPosition parks its callbacks on the sandbox so a test can
+    // deliver a fix or a failure whenever it likes.
+    navigator: {
+      geolocation: {
+        getCurrentPosition: (ok, err) => { sandbox.__geo = { ok, err }; },
+      },
+    },
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
@@ -41,11 +52,12 @@ function load() {
   const expose = `
     this.__api = {
       parseGrid, latLonToGrid, sunElevation, kmBetween, neighborGrids,
+      nextSunCrossings, bandRangeList, ledeHTML,
       bandFromHz, estimateMUF, estimateLUF, scoreBand, verdict,
       nthFullWeekendSat, activeContest, activityFactor,
       liveScore, liveStats, addSpot, pruneSpots, renderBands,
-      normalizedRate, baselineExpected,
-      BANDS, LIVE_WINDOW,
+      normalizedRate, baselineExpected, setLiveState, windowFill,
+      BANDS, LIVE_WINDOW, MIN_SKY_KM,
       get spots() { return spots; },
       set spots(v) { spots = v; },
       get myGrids() { return myGrids; },

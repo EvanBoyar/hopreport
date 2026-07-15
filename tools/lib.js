@@ -13,7 +13,7 @@ const src = ['geo.js', 'model.js']
   .map(f => fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'))
   .join('\n;\n');
 vm.runInContext(src + `
-;this.__x = { parseGrid, latLonToGrid, neighborGrids, activityFactor,
-              activeContest, BANDS };`, sandbox, { filename: 'page-js.js' });
+;this.__x = { parseGrid, latLonToGrid, neighborGrids, kmBetween, MIN_SKY_KM,
+              activityFactor, activeContest, BANDS };`, sandbox, { filename: 'page-js.js' });
 
 module.exports = sandbox.__x;

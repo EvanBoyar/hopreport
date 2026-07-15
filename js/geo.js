@@ -26,14 +26,38 @@ function sunElevation(lat, lon, date) {
   const start = Date.UTC(date.getUTCFullYear(), 0, 0);
   const doy = (date.getTime() - start) / 86400000;
   const decl = 23.44 * Math.sin(2 * Math.PI * (284 + doy) / 365.25);
+  // Equation of time: true solar noon drifts up to 16 minutes from mean
+  // noon over the year, which matters most to the absorption gate around
+  // dawn and dusk in November and February.
+  const B = 2 * Math.PI * (doy - 81) / 365;
+  const eotMin = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B);
   const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
-  const solarTime = utcHours + lon / 15;
+  const solarTime = utcHours + lon / 15 + eotMin / 60;
   const hourAngle = (solarTime - 12) * 15;
   const el = Math.asin(
     Math.sin(lat * rad) * Math.sin(decl * rad) +
     Math.cos(lat * rad) * Math.cos(decl * rad) * Math.cos(hourAngle * rad)
   ) / rad;
   return el;
+}
+
+function nextSunCrossings(lat, lon, from) {
+  // The next sunrise and sunset within 24 hours, found by walking the
+  // elevation in 5 minute steps and interpolating each zero crossing.
+  // Either can be null inside polar day or polar night. Refraction is
+  // ignored, like everywhere else in the sun math.
+  const cross = (t1, e1, t2, e2) =>
+    new Date(t1.getTime() + (0 - e1) / (e2 - e1) * (t2.getTime() - t1.getTime()));
+  let rise = null, set = null;
+  let tPrev = from, ePrev = sunElevation(lat, lon, from);
+  for (let m = 5; m <= 24 * 60 && (!rise || !set); m += 5) {
+    const t = new Date(from.getTime() + m * 60000);
+    const e = sunElevation(lat, lon, t);
+    if (!rise && ePrev <= 0 && e > 0) rise = cross(tPrev, ePrev, t, e);
+    if (!set && ePrev > 0 && e <= 0) set = cross(tPrev, ePrev, t, e);
+    tPrev = t; ePrev = e;
+  }
+  return { rise, set };
 }
 
 function kmBetween(a, b) {

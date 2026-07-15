@@ -6,6 +6,40 @@
 
 const $ = id => document.getElementById(id);
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const hhmmUTC = d =>
+  String(d.getUTCHours()).padStart(2, '0') + String(d.getUTCMinutes()).padStart(2, '0');
+
+function ledeHTML(rows, ctx) {
+  // The report's own headline, written from the same scores the log
+  // shows: what is open (contiguous bands collapsed to a range), how far
+  // the spots reach, and when the closed half of the spectrum comes
+  // back. Empty when nothing has a verdict yet.
+  const scored = rows.filter(r => r.score != null);
+  if (!scored.length) return '';
+  const open = scored.filter(r => r.score >= 75);
+  const good = scored.filter(r => r.score >= 50 && r.score < 75);
+  let s;
+  if (open.length) {
+    const reach = Math.max(...open.map(r => r.maxKm || 0));
+    s = `<b>${bandRangeList(open.map(r => r.nm))}</b> ${open.length > 1 ? 'are' : 'is'} open` +
+      (reach > 0 ? `, with spots heard to <b>${Math.round(reach).toLocaleString()} km</b>` : '') + '.';
+  } else if (good.length) {
+    s = `Nothing is wide open; <b>${bandRangeList(good.map(r => r.nm))}</b> ` +
+      `${good.length > 1 ? 'are' : 'is'} worth a call.`;
+  } else {
+    s = 'Every band scores low right now.';
+  }
+  const lows = scored.filter(r => BAND_BY_NAME[r.nm].f < 11);
+  const highs = scored.filter(r => BAND_BY_NAME[r.nm].f >= 14);
+  if (ctx.sunEl > 0 && ctx.sunSet && lows.length && lows.every(r => r.score < 30))
+    s += ` The low bands return near sunset (${hhmmUTC(ctx.sunSet)} UTC).`;
+  else if (ctx.sunEl <= 0 && ctx.sunRise && highs.length && highs.every(r => r.score < 30))
+    s += ` The high bands return after sunrise (${hhmmUTC(ctx.sunRise)} UTC).`;
+  return s;
+}
+
 function fieldTile(k, v, unit, srcClass, srcText) {
   return `<div class="field"><div class="lbl">${k}</div>
     <div class="val">${v}${unit ? ` <span class="unit">${unit}</span>` : ''}</div>
@@ -21,6 +55,7 @@ async function loadBaseline() {
 
 function renderBands(ctx) {
   pruneSpots();
+  paintLiveLine();
   const inc = id => { const el = $(id); return !!(el && el.checked); };
   const useDigi = inc('incDigi'), useCw = inc('incCw'), useModel = inc('incModel');
   const lat = Number.isFinite(ctx.lat) ? ctx.lat : 0;
@@ -33,22 +68,22 @@ function renderBands(ctx) {
   // How much of the hour window has actually filled: the feed has no
   // history, so counts are extrapolated to a rate by liveScore, and the
   // live share of the blend ramps up with coverage (full weight from 30
-  // minutes on) so thin extrapolations do not get a full vote. Retrieval
-  // spots arrive as a full hour, so no feed at all means fill = 1.
-  const fill = liveSince
-    ? Math.min(1, (Date.now() - liveSince) / LIVE_WINDOW) : 1;
+  // minutes on) so thin extrapolations do not get a full vote.
+  const fill = windowFill();
   const liveW = 0.6 * Math.min(1, fill / 0.5);
+  const summary = [];
   $('bands').innerHTML = BANDS.map(b => {
     const s = scoreBand(b, ctx);
-    const st = liveStats(b.nm, useDigi, useCw);
+    const st = liveStats(b.nm, useDigi, useCw, fill);
     const bl = grids ? baselineExpected(baselineData, grids, b.nm) : null;
-    const lv = (useDigi || useCw) ? liveScore(b, st, act, bl ? bl.ref : null, fill) : null;
+    const lv = (useDigi || useCw) ? liveScore(b, st, act, bl ? bl.ref : null) : null;
     // With the model excluded, a band scores on live spots alone and shows
     // no verdict until it has enough of them.
     const score = useModel
       ? (lv == null ? s.score : Math.round(liveW * lv + (1 - liveW) * s.score))
       : (lv == null ? null : Math.round(lv));
     const [word, cls] = score == null ? [st.n ? 'sparse' : 'quiet', 's-none'] : verdict(score);
+    summary.push({ nm: b.nm, score, maxKm: st.max });
     let facts = (b.es && ctx.muf < 40 && !st.n)
       ? `Es dependent. Watch the band, not this number.`
       : `MUF ratio <b>${(b.f / ctx.muf).toFixed(2)}</b> / ` +
@@ -62,13 +97,18 @@ function renderBands(ctx) {
       const dirBit = `<span title="heard in your area / your area heard elsewhere">↓${rxN} ↑${txN}</span>`;
       let devBit = '';
       if (bl) {
-        const rate = normalizedRate(st, act) / Math.max(1 / 12, fill);
-        const dev = rate / bl.expected;
+        // liveStats already scaled the counts to a per-hour rate.
+        const dev = normalizedRate(st, act) / bl.expected;
         devBit = ` (<b>${dev >= 10 ? Math.round(dev) : dev.toFixed(1)}×</b> usual)`;
       }
       const tail = lv != null ? (useModel ? 'blended live' : 'live only')
                               : (useModel ? 'model only' : 'needs 3 spots');
       facts += ` / ${modeBit} ${dirBit}${devBit}, max <b>${Math.round(st.max).toLocaleString()}</b> km, ${tail}`;
+    }
+    // 6m only: the tropo tally rides along for orientation, never scored.
+    if (st.tN) {
+      facts += ` / tropo <b>${st.tN}</b> spot${st.tN > 1 ? 's' : ''}, ` +
+        `max <b>${Math.round(st.tMax).toLocaleString()}</b> km`;
     }
     return `<div class="band">
       <div class="id"><span class="nm">${b.nm}</span><span class="fq">${b.f.toFixed(2)} MHz</span></div>
@@ -81,6 +121,9 @@ function renderBands(ctx) {
       <div class="stampcell"><span class="stamp ${cls}">${word}</span><span class="pct">${score == null ? `${st.n} of 3 spots` : `${score} / 100`}</span></div>
     </div>`;
   }).join('');
+  const lede = $('lede');
+  lede.innerHTML = ledeHTML(summary, ctx);
+  lede.hidden = !lede.innerHTML;
 }
 
 async function refresh() {
@@ -99,12 +142,34 @@ async function refresh() {
   const now = new Date();
   const sunEl = sunElevation(pos.lat, pos.lon, now);
   try { history.replaceState(null, '', '#' + $('grid').value.trim().toUpperCase()); } catch (e) {}
+  // Remember the working grid: most stations do not move between visits,
+  // and desktop browsers often cannot produce a geolocation fix at all.
+  try { localStorage.setItem('hopGrid', $('grid').value.trim().toUpperCase()); } catch (e) {}
   const contest = activeContest(now, pos.lat, pos.lon);
-  $('clockline').textContent =
-    `${pos.lat.toFixed(1)}\u00b0, ${pos.lon.toFixed(1)}\u00b0 / sun ${sunEl >= 0 ? '+' : ''}${sunEl.toFixed(0)}\u00b0 (${sunEl > 0 ? 'day' : 'night'})` +
+  const sun = nextSunCrossings(pos.lat, pos.lon, now);
+  // Greyline: the sun within 6 degrees of the horizon, either side. The
+  // terminator is when the low bands do their best work, so it earns a
+  // flag in the dateline.
+  $('clockline').innerHTML =
+    `issued ${now.getUTCDate()} ${MONTHS[now.getUTCMonth()]} ${now.getUTCFullYear()} ${hhmmUTC(now)} UTC` +
+    (Math.abs(sunEl) <= 6 ? ' / <span class="grey">greyline</span>' : '') +
     (contest ? ` / ${contest.nm} weekend` : '');
 
-  $('status').innerHTML = fieldTile('Status', '&hellip;', '', 'est', 'fetching space weather');
+  // Position and sun are known before any fetch answers; they trail the
+  // row (least important) but render from the first paint.
+  const posTile = fieldTile('Position',
+    `${Math.abs(pos.lat).toFixed(1)}\u00b0${pos.lat >= 0 ? 'N' : 'S'} ` +
+    `${Math.abs(pos.lon).toFixed(1)}\u00b0${pos.lon >= 0 ? 'E' : 'W'}`,
+    '', 'ok', 'from your grid');
+  const sunTile = fieldTile('Sun',
+    `${sunEl >= 0 ? '+' : ''}${sunEl.toFixed(0)}\u00b0`, '', 'est',
+    sunEl > 0
+      ? (sun.set ? `daylight, sets ${hhmmUTC(sun.set)} UTC` : 'daylight around the clock')
+      : (sun.rise ? `night, rises ${hhmmUTC(sun.rise)} UTC` : 'night around the clock'));
+
+  $('status').innerHTML =
+    fieldTile('Status', '&hellip;', '', 'est', 'fetching space weather') +
+    posTile + sunTile;
   $('bands').innerHTML = '';
 
   const [sfiR, kpR, xrR, ionR] = await Promise.allSettled([
@@ -147,6 +212,7 @@ async function refresh() {
       'est', 'from sun and X-ray flux'),
   ];
   if (ion) tiles.push(fieldTile('foF2', ion.fof2.toFixed(1), 'MHz', 'ok', 'NVIS critical freq'));
+  tiles.push(posTile, sunTile);
   $('status').innerHTML = tiles.join('');
 
   if (luf >= muf) {
@@ -160,7 +226,8 @@ async function refresh() {
     msg.classList.add('show');
   }
 
-  lastCtx = { muf, kp, sunEl, lat: pos.lat, lon: pos.lon, flareMult: xr.mult };
+  lastCtx = { muf, kp, sunEl, lat: pos.lat, lon: pos.lon, flareMult: xr.mult,
+              sunRise: sun.rise, sunSet: sun.set };
   renderBands(lastCtx);
   connectLive(pos);
 }
@@ -183,20 +250,34 @@ applyTheme(darkMode);
 $('theme').addEventListener('click', () => { darkMode = !darkMode; applyTheme(darkMode); });
 
 // Locator priority: a grid in the URL wins, so a bookmark or shared link
-// opens on the right square. On a bare URL we ask the browser where we are
-// and fill the empty field once a fix arrives. There is no default square:
-// if geolocation is denied, unavailable, or off-https, the report waits
-// until a grid is typed.
+// opens on the right square. Next comes the grid this browser last used,
+// since stations rarely move between visits and desktop browsers often
+// have no position backend (Firefox on Linux fails even with permission
+// granted). Only a first visit on a bare URL asks the browser where we
+// are, and a failed fix says so instead of leaving the "no location yet"
+// prompt unexplained. There is no default square.
 const urlGrid = (new URLSearchParams(location.search).get('grid') ||
                  location.hash.replace(/^#/, '')).trim();
+let storedGrid = '';
+try { storedGrid = (localStorage.getItem('hopGrid') || '').trim(); } catch (e) {}
 if (parseGrid(urlGrid)) {
   $('grid').value = urlGrid.toUpperCase();
+} else if (parseGrid(storedGrid)) {
+  $('grid').value = storedGrid.toUpperCase();
 } else if (navigator.geolocation) {
   navigator.geolocation.getCurrentPosition(p => {
     if ($('grid').value.trim()) return;   // a typed grid wins over the fix
     $('grid').value = latLonToGrid(p.coords.latitude, p.coords.longitude, 6);
     refresh();
-  }, () => { /* denied or unavailable: the "no location yet" prompt stands */ },
+  }, err => {
+    if ($('grid').value.trim()) return;
+    const msg = $('msg');
+    msg.textContent = (err && err.code === 1
+      ? 'The location request was denied.'
+      : 'The browser could not produce a position fix, which is common on desktops without location services.') +
+      ' Enter your Maidenhead grid above (FN30 and FN30as both work); it is remembered for next time.';
+    msg.classList.add('show');
+  },
   { maximumAge: 10 * 60 * 1000, timeout: 10000 });
 }
 

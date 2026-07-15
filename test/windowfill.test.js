@@ -5,37 +5,58 @@ const { load } = require('./helper');
 
 const CTX = { muf: 20, kp: 2, sunEl: 30, lat: 40.5, lon: -74, flareMult: 1 };
 
-test('liveScore extrapolates a partial window to a full-hour rate', () => {
+test('liveStats extrapolates a partial window to a full-hour rate', () => {
   const { api } = load();
   const b20 = api.BANDS.find(b => b.nm === '20m');
-  const st = { n: 10, max: 5000, cw: 0, dRx: 6, dTx: 4, cRx: 0, cTx: 0 };
-  const partial = api.liveScore(b20, st, null, null, 0.25);   // 15 min of data
-  const full = api.liveScore(b20, st, null, null, 1);
+  api.myGrids = new Set(['FN30']);
+  const t = Date.now();
+  for (let i = 0; i < 6; i++) api.addSpot('20m', 'IO91', 'FN30', 'FT8', t - i * 15000 - 1000, 'G' + i, 'K2A');
+  for (let i = 0; i < 4; i++) api.addSpot('20m', 'FN30', 'IO91', 'FT8', t - i * 15000 - 2000, 'K2A', 'G' + i);
+  const quarter = api.liveStats('20m', true, true, 0.25);     // 15 min of data
+  const partial = api.liveScore(b20, quarter);
+  const full = api.liveScore(b20, api.liveStats('20m', true, true, 1));
   assert.ok(partial > full, `same count over less time scores higher (${Math.round(partial)} > ${Math.round(full)})`);
-  // 10 spots in a quarter window = the same rate as 40 in a full one
-  const st40 = { n: 40, max: 5000, cw: 0, dRx: 24, dTx: 16, cRx: 0, cTx: 0 };
-  assert.ok(Math.abs(partial - api.liveScore(b20, st40, null, null, 1)) < 0.01);
+  // 10 spots in a quarter window carry the same rate as 40 in a full one
+  const st40 = { n: 40, max: quarter.max, max2: quarter.max2, cw: 0,
+                 dRx: 24, dTx: 16, cRx: 0, cTx: 0 };
+  assert.ok(Math.abs(partial - api.liveScore(b20, st40)) < 0.01);
 });
 
 test('extrapolation is capped at 5 minutes of data', () => {
   const { api } = load();
   const b20 = api.BANDS.find(b => b.nm === '20m');
-  const st = { n: 3, max: 5000, cw: 0, dRx: 3, dTx: 0, cRx: 0, cTx: 0 };
-  assert.strictEqual(api.liveScore(b20, st, null, null, 0.001),
-                     api.liveScore(b20, st, null, null, 1 / 12));
+  api.myGrids = new Set(['FN30']);
+  const t = Date.now();
+  for (let i = 0; i < 3; i++) api.addSpot('20m', 'IO91', 'FN30', 'CW', t - i * 15000 - 1000, 'G' + i, 'K2A');
+  assert.strictEqual(api.liveScore(b20, api.liveStats('20m', true, true, 0.001)),
+                     api.liveScore(b20, api.liveStats('20m', true, true, 1 / 12)));
 });
 
 test('a constant spot rate scores flat as the window fills', () => {
   // Simulate a page open for 12 vs 48 minutes under a steady 1 spot/min:
   // the score should not climb with coverage.
-  const { api } = load();
-  const b20 = api.BANDS.find(b => b.nm === '20m');
   const scoreAfter = mins => {
-    const st = { n: mins, max: 5000, cw: 0, dRx: mins, dTx: 0, cRx: 0, cTx: 0 };
-    return api.liveScore(b20, st, null, null, mins / 60);
+    const { api } = load();
+    api.myGrids = new Set(['FN30']);
+    const t = Date.now();
+    for (let i = 0; i < mins; i++)
+      api.addSpot('20m', 'IO91', 'FN30', 'FT8', t - i * 60000 - 1000, 'G' + i, 'K2A');
+    const b20 = api.BANDS.find(b => b.nm === '20m');
+    return api.liveScore(b20, api.liveStats('20m', true, true, mins / 60));
   };
   assert.ok(Math.abs(scoreAfter(12) - scoreAfter(48)) < 0.01,
     `12 min ${scoreAfter(12).toFixed(2)} vs 48 min ${scoreAfter(48).toFixed(2)}`);
+});
+
+test('retrieval spots already cover the hour and are not extrapolated', () => {
+  const { api } = load();
+  api.myGrids = new Set(['FN30']);
+  const t = Date.now();
+  api.addSpot('20m', 'IO91', 'FN30', 'FT8', t - 1000, 'G4X', 'K2A');              // heard live
+  api.addSpot('20m', 'FN30', 'JN48', 'FT8', t - 30 * 60000, 'K2A', 'DL1X', 'r');  // via retrieval
+  const st = api.liveStats('20m', true, true, 0.25);
+  assert.strictEqual(st.wdRx, 4);   // the live spot is scaled to the quarter window
+  assert.strictEqual(st.wdTx, 1);   // the retrieval spot counts once
 });
 
 test('renderBands ramps the live blend weight with coverage', () => {
@@ -64,6 +85,19 @@ test('renderBands ramps the live blend weight with coverage', () => {
   assert.ok(Number.isFinite(pct(young)) && Number.isFinite(pct(mature)));
   const spread = Math.abs(pct(young) - pct(mature));
   assert.ok(spread < 25, `blend keeps scores comparable across fill (spread ${spread})`);
+});
+
+test('the live line counts the window up while it fills, then retires', () => {
+  const { api, el } = load();
+  api.liveSince = Date.now() - 12 * 60 * 1000;
+  api.setLiveState('live: FN30 + 8 neighbors', 'ok');
+  assert.strictEqual(el('liveline').hidden, false, 'shown while filling');
+  assert.match(el('mqttState').textContent, /window 12 of 60 min/);
+  assert.match(el('mqttState').textContent, /Leaving the page open/);
+  api.liveSince = Date.now() - api.LIVE_WINDOW;
+  api.renderBands(CTX);   // the 30 s repaint path
+  assert.strictEqual(el('liveline').hidden, true, 'hidden once full');
+  assert.strictEqual(el('mqttState').textContent, 'live: FN30 + 8 neighbors');
 });
 
 test('deviation display scales with window fill', () => {

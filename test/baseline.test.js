@@ -85,6 +85,16 @@ test('aggregator publishes medians only after enough samples', () => {
   assert.strictEqual(short.bands['20m'], undefined);
 });
 
+test('a units version bump flushes stale reservoirs', () => {
+  let state = { v: 1, reservoirs: { '20m': { FN30: [9, 9, 9] } } };
+  state = agg.fold(state, {
+    t: '2026-07-14T20:00:00Z', secs: 600,
+    bands: { '20m': { global: 5000, squares: { FN30: [10, 20] } } },
+  });
+  assert.strictEqual(state.v, agg.STATE_V);
+  assert.strictEqual(state.reservoirs['20m'].FN30.length, 1, 'old units dropped');
+});
+
 test('aggregator reservoir is bounded and median resists outliers', () => {
   assert.strictEqual(agg.median([1, 2, 100]), 2);
   assert.strictEqual(agg.median([1, 2, 3, 4]), 2.5);
