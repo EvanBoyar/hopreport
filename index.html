@@ -82,7 +82,12 @@
   .inner { padding: 16px 28px 20px; }
 
   /* ---- masthead ---- */
-  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  /* The day/night switch is pinned to the top right corner whatever the
+     width, so the header reserves its footprint and wraps around it. */
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+    position: relative; padding-right: 56px;
+  }
   .mark { display: block; line-height: 0; }
   .mark svg { display: block; }
   .mark:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
@@ -93,7 +98,8 @@
   }
   /* day/night switch: a little sun or moon crossing a pill-shaped sky */
   .themebtn {
-    position: relative; width: 46px; height: 22px; flex: none;
+    position: absolute; top: 3px; right: 0;
+    width: 46px; height: 22px;
     border: 2px solid var(--ink); border-radius: 12px;
     background: transparent; padding: 0; cursor: pointer;
   }
@@ -309,9 +315,8 @@
     .band .nm { font-size: 16px; }
     .band .fq { font-size: 9px; letter-spacing: 0; white-space: nowrap; }
     .stamp { font-size: 10px; letter-spacing: 0.13em; padding: 2px 6px 1px 8px; }
-    .gridform { margin-left: 0; order: 2; }
-    /* the title line has spare width when squished; the switch joins it */
-    .themebtn { order: 1; margin-left: auto; align-self: flex-start; margin-top: 5px; }
+    .gridform { margin-left: 0; }
+    header { padding-right: 50px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .fill { transition: none; }
