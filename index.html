@@ -83,10 +83,17 @@
 
   /* ---- masthead ---- */
   /* The day/night switch is pinned to the top right corner whatever the
-     width, so the header reserves its footprint and wraps around it. */
+     width. The header reserves its footprint only when wide enough for
+     the grid form to reach that corner (a full single row needs about
+     797px of content, which exists from ~885px viewports); anywhere
+     narrower the form lives on its own row and a reserve would only
+     steal width from it. */
   header {
     display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
-    position: relative; padding-right: 56px;
+    position: relative;
+  }
+  @media (min-width: 800px) {
+    header { padding-right: 56px; }
   }
   .mark { display: block; line-height: 0; }
   .mark svg { display: block; }
@@ -316,10 +323,8 @@
     .band .fq { font-size: 9px; letter-spacing: 0; white-space: nowrap; }
     .stamp { font-size: 10px; letter-spacing: 0.13em; padding: 2px 6px 1px 8px; }
     .gridform { margin-left: 0; }
-    /* No reserved corner on the whole header on phones, so the grid form
-       below keeps the full width; only the title row, which shares the
-       switch's row, clears it. */
-    header { padding-right: 0; }
+    /* Only the title row shares the switch's row on phones; it alone
+       clears the corner. */
     .titleline { padding-right: 44px; }
   }
   @media (prefers-reduced-motion: reduce) {
