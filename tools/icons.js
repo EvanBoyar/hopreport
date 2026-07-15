@@ -3,11 +3,14 @@
 // hop off the ionosphere) is drawn once as data below, and everything
 // that shows it is generated from here:
 //
-//   index.html       the inline favicon (day and night via a media query)
-//                    and the masthead mark (painted with the page's CSS
-//                    variables, so it follows the theme switch live)
-//   icons/icon.svg   the launcher icon, night palette only
-//   icons/*.png      renders of icon.svg for the manifest and iOS
+//   index.html            the inline favicon (day and night via a media
+//                         query) and the masthead mark (painted with the
+//                         page's CSS variables, so it follows the theme
+//                         switch live)
+//   icons/icon.svg        the launcher icon, night palette only
+//   icons/icon-round.svg  the same art cut to a disc, for launchers that
+//                         crop the plain icon to their own tile shape
+//   icons/*.png           renders of the two SVGs for the manifest and iOS
 //
 // Rewrite them all with:  node tools/icons.js
 // The PNGs need inkscape on the PATH; everything else regenerates
@@ -21,21 +24,23 @@ const ROOT = path.join(__dirname, '..');
 
 // One palette per sky. The mark paints with CSS variables instead, so a
 // theme change never needs a regeneration.
+// Stars sit in the space band, which stays dark in both palettes, so one
+// pale value serves day, night, and the mark alike.
 const DAY = {
   sky: '#fcfbf6', space: '#1c2434', iono: '#2c5697', ocean: '#2a6a9b',
-  land: '#2e7c4f', hop: '#23211c', station: '#be3b2e',
+  land: '#2e7c4f', hop: '#23211c', station: '#be3b2e', star: '#dce8f2',
 };
 const NIGHT = {
   sky: '#15293f', space: '#060b12', iono: '#7fa8dc', ocean: '#3d7fb5',
-  land: '#6fbe8b', hop: '#dce8f2', station: '#e0685c',
+  land: '#6fbe8b', hop: '#dce8f2', station: '#e0685c', star: '#dce8f2',
 };
 const VARS = {
   sky: 'var(--paper)', space: 'var(--icon-space)', iono: 'var(--blue)',
   ocean: 'var(--icon-ocean)', land: 'var(--green)', hop: 'var(--ink)',
-  station: 'var(--red)',
+  station: 'var(--red)', star: '#dce8f2',
 };
 // Single-letter class names keep the favicon data URI small.
-const CLASSES = { sky: 'k', space: 'v', iono: 'o', ocean: 'w', land: 'g', hop: 'h', station: 's' };
+const CLASSES = { sky: 'k', space: 'v', iono: 'o', ocean: 'w', land: 'g', hop: 'h', station: 's', star: 't' };
 
 // The favicon and the mark share the original square composition. The
 // launcher art is tighter: stations in and up, ground raised to meet
@@ -43,6 +48,7 @@ const CLASSES = { sky: 'k', space: 'v', iono: 'o', ocean: 'w', land: 'g', hop: '
 // keeps everything that matters inside the maskable safe zone (a
 // centered circle 80% of the width), so a circular launcher mask crops
 // only sky and ocean.
+const STARS = [[15, 9.5, '1.0', 0.85], [26, 4.5, '1.2', 1], [38, 7, '0.9', 0.7], [47, 10.5, '1.1', 0.9]];
 const TILE = {
   corner: 10,
   lower: 'M 0 38 Q 32 28 64 38 L 64 41 Q 32 31 0 41 Z',
@@ -50,7 +56,7 @@ const TILE = {
   land: [[13, 58], [51, 58]],
   hop: 'M 12 53 Q 32 -12 52 53',
   stations: [[12, 53], [52, 53]],
-  stars: [],
+  stars: STARS,
 };
 const LAUNCHER = {
   corner: 0,
@@ -59,7 +65,7 @@ const LAUNCHER = {
   land: [[15, 54], [49, 54]],
   hop: 'M 14 48 Q 32 -9 50 48',
   stations: [[14, 48], [50, 48]],
-  stars: [[15, 9.5, '1.0', 0.85], [26, 4.5, '1.2', 1], [38, 7, '0.9', 0.7], [47, 10.5, '1.1', 0.9]],
+  stars: STARS,
 };
 const SPACE = 'M 0 0 L 64 0 L 64 18 Q 32 8 0 18 Z';
 const IONO = 'M 0 18 Q 32 8 64 18 L 64 22 Q 32 12 0 22 Z';
@@ -91,7 +97,7 @@ function scene(mode, layout, ids) {
   ];
   if (layout.stars.length)
     items.push({ comment: 'a few stars in the dark band above the ionosphere',
-                 open: `<g ${paint(mode, 'hop', 'fill')}>`,
+                 open: `<g ${paint(mode, 'star')}>`,
                  kids: layout.stars.map(([x, y, r, o]) =>
                    `<circle cx="${x}" cy="${y}" r="${r}"${o === 1 ? '' : ` opacity="${o}"`}/>`),
                  close: '</g>' });
@@ -130,10 +136,12 @@ function pretty(items, ind, comments) {
 // The favicon link for index.html: the day palette in a style block, the
 // night palette behind a media query, both riding one data URI.
 function faviconLink() {
-  const rules = pal => Object.entries(CLASSES).map(([role, cls]) =>
-    `.${cls}{${role === 'hop' ? 'stroke' : 'fill'}:${pal[role]}}`).join('');
+  // The media block only restates the roles night actually changes.
+  const rules = (pal, base) => Object.entries(CLASSES)
+    .filter(([role]) => !base || pal[role] !== base[role])
+    .map(([role, cls]) => `.${cls}{${role === 'hop' ? 'stroke' : 'fill'}:${pal[role]}}`).join('');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
-    `<style>${rules(DAY)}@media(prefers-color-scheme:dark){${rules(NIGHT)}}</style>` +
+    `<style>${rules(DAY)}@media(prefers-color-scheme:dark){${rules(NIGHT, DAY)}}</style>` +
     clips(TILE, '').join('') +
     `<g clip-path="url(#r)">` + flat(scene('class', TILE, '')) + `</g></svg>`;
   return `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,` +
@@ -153,7 +161,7 @@ function markSvg() {
   ].join('\n');
 }
 
-// The launcher icon source the PNGs are rendered from.
+// The launcher icon source the maskable and iOS PNGs are rendered from.
 function launcherSvg() {
   return [
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">',
@@ -167,9 +175,30 @@ function launcherSvg() {
   ].join('\n') + '\n';
 }
 
+// The same art cut to a disc, for the manifest entries without the
+// maskable hint. Launchers that ignore that hint (Firefox on Android is
+// one) crop the plain icon to their own tile shape; a disc with
+// transparent corners stays a circle under any of them.
+function roundSvg() {
+  return [
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">',
+    '  <!-- Generated by tools/icons.js; edit the scene there, not here.',
+    '       The launcher art as a disc with transparent corners, for the',
+    '       manifest entries without the maskable hint, so launchers that',
+    '       crop the plain icon to their own tile shape still show a circle. -->',
+    '  <clipPath id="c"><circle cx="32" cy="32" r="32"/></clipPath>',
+    ...clips(LAUNCHER, '').map(c => '  ' + c),
+    '  <g clip-path="url(#c)">',
+    ...pretty(scene('night', LAUNCHER, ''), '    ', true),
+    '  </g>',
+    '</svg>',
+  ].join('\n') + '\n';
+}
+
 function main() {
   fs.writeFileSync(path.join(ROOT, 'icons', 'icon.svg'), launcherSvg());
-  console.log('wrote icons/icon.svg');
+  fs.writeFileSync(path.join(ROOT, 'icons', 'icon-round.svg'), roundSvg());
+  console.log('wrote icons/icon.svg and icons/icon-round.svg');
 
   const htmlPath = path.join(ROOT, 'index.html');
   let html = fs.readFileSync(htmlPath, 'utf8');
@@ -182,11 +211,19 @@ function main() {
   fs.writeFileSync(htmlPath, html);
   console.log('wrote index.html (favicon link and masthead mark)');
 
-  const src = path.join(ROOT, 'icons', 'icon.svg');
-  for (const [px, name] of [[192, 'icon-192.png'], [512, 'icon-512.png'], [180, 'apple-touch-icon.png']]) {
+  const jobs = [
+    ['icon-round.svg', 192, 'icon-192.png'],
+    ['icon-round.svg', 512, 'icon-512.png'],
+    ['icon.svg', 192, 'icon-maskable-192.png'],
+    ['icon.svg', 512, 'icon-maskable-512.png'],
+    ['icon.svg', 180, 'apple-touch-icon.png'],
+  ];
+  for (const [src, px, name] of jobs) {
     const out = path.join(ROOT, 'icons', name);
     try {
-      execFileSync('inkscape', [src, '-w', String(px), '-h', String(px), '-o', out], { stdio: 'pipe' });
+      execFileSync('inkscape',
+        [path.join(ROOT, 'icons', src), '-w', String(px), '-h', String(px), '-o', out],
+        { stdio: 'pipe' });
       console.log(`wrote icons/${name}`);
     } catch (e) {
       console.log(`skipped icons/${name}: ${String(e.message).split('\n')[0]}`);
@@ -195,4 +232,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { faviconLink, markSvg, launcherSvg };
+module.exports = { faviconLink, markSvg, launcherSvg, roundSvg };

@@ -14,6 +14,10 @@ test('the launcher SVG is what the generator draws', () => {
   assert.strictEqual(read('icons/icon.svg'), icons.launcherSvg());
 });
 
+test('the round launcher SVG is what the generator draws', () => {
+  assert.strictEqual(read('icons/icon-round.svg'), icons.roundSvg());
+});
+
 test('the inline favicon is what the generator draws', () => {
   assert.ok(read('index.html').includes(icons.faviconLink()),
     'index.html favicon link differs from tools/icons.js output');
