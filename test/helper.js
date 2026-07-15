@@ -23,6 +23,7 @@ function load(opts = {}) {
     document: {
       getElementById: el,
       createElement: () => el('x' + Math.random()),
+      querySelectorAll: () => [],
       body: { appendChild() {} },
       documentElement: { dataset: {} },
       addEventListener() {},

@@ -244,6 +244,13 @@ function applyTheme(dark) {
   // moon by night at the right; CSS slides it and swaps the icon.
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   $('theme').setAttribute('aria-checked', String(dark));
+  // The browser bars (status, address, bottom) take the paper color of
+  // the active theme. Writing the same value into both theme-color
+  // metas sidesteps their prefers-color-scheme media queries, which
+  // know the OS setting but not this switch.
+  const paper = dark ? '#15293f' : '#fcfbf6';
+  for (const m of document.querySelectorAll('meta[name="theme-color"]'))
+    m.setAttribute('content', paper);
 }
 let darkMode = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
 applyTheme(darkMode);
