@@ -101,8 +101,6 @@ function liveStats(bandName, useDigi, useCw, fill) {
   return { n, max, max2, cw, dRx, dTx, cRx, cTx, wdRx, wdTx, wcRx, wcTx, tN, tMax };
 }
 
-let liveState = { txt: '', cls: '' };
-
 function windowFill() {
   // Filled fraction of the hour window. The feed carries no history, so a
   // fresh page has only minutes of spots; retrieval spots arrive as a full
@@ -110,23 +108,13 @@ function windowFill() {
   return liveSince ? Math.min(1, (Date.now() - liveSince) / LIVE_WINDOW) : 1;
 }
 
-function paintLiveLine() {
-  const el = $('mqttState');
-  const fill = windowFill();
-  const filling = liveState.cls === 'ok' && fill < 1;
-  el.textContent = filling
-    ? `${liveState.txt} / window ${Math.round(fill * 60)} of 60 min. Leaving the page open sharpens the scores.`
-    : liveState.txt;
-  el.className = 'lstate' + (liveState.cls ? ' ' + liveState.cls : '');
-  // The line surfaces when the feed is unhealthy, and while the hour
-  // window is still filling so nobody mistakes a young page for a full
-  // reading; once the window is full it speaks through the band facts.
-  $('liveline').hidden = !(liveState.cls === 'bad' || liveState.cls === 'warn' || filling);
-}
-
 function setLiveState(txt, cls) {
-  liveState = { txt, cls: cls || '' };
-  paintLiveLine();
+  const el = $('mqttState');
+  el.textContent = txt;
+  el.className = 'lstate' + (cls ? ' ' + cls : '');
+  // The line surfaces only when the feed is unreachable or degraded; a
+  // healthy live layer speaks through the band facts instead.
+  $('liveline').hidden = !(cls === 'bad' || cls === 'warn');
 }
 
 function subscribeGrids(c, grids) {

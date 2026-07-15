@@ -87,17 +87,18 @@ test('renderBands ramps the live blend weight with coverage', () => {
   assert.ok(spread < 25, `blend keeps scores comparable across fill (spread ${spread})`);
 });
 
-test('the live line counts the window up while it fills, then retires', () => {
+test('the live line surfaces only when the feed is in trouble', () => {
   const { api, el } = load();
   api.liveSince = Date.now() - 12 * 60 * 1000;
   api.setLiveState('live: FN30 + 8 neighbors', 'ok');
-  assert.strictEqual(el('liveline').hidden, false, 'shown while filling');
-  assert.match(el('mqttState').textContent, /window 12 of 60 min/);
-  assert.match(el('mqttState').textContent, /Leaving the page open/);
-  api.liveSince = Date.now() - api.LIVE_WINDOW;
-  api.renderBands(CTX);   // the 30 s repaint path
-  assert.strictEqual(el('liveline').hidden, true, 'hidden once full');
-  assert.strictEqual(el('mqttState').textContent, 'live: FN30 + 8 neighbors');
+  assert.strictEqual(el('liveline').hidden, true, 'healthy feed stays quiet');
+  api.setLiveState('link lost. Retrying in 15 s.', 'warn');
+  assert.strictEqual(el('liveline').hidden, false, 'a degraded link is announced');
+  assert.match(el('mqttState').textContent, /link lost/);
+  api.setLiveState('mqtt.js failed to load. Scores are model only.', 'bad');
+  assert.strictEqual(el('liveline').hidden, false, 'an unreachable broker is announced');
+  api.setLiveState('live: FN30 + 8 neighbors', 'ok');
+  assert.strictEqual(el('liveline').hidden, true, 'recovery clears the line');
 });
 
 test('deviation display scales with window fill', () => {

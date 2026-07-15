@@ -55,7 +55,6 @@ async function loadBaseline() {
 
 function renderBands(ctx) {
   pruneSpots();
-  paintLiveLine();
   const inc = id => { const el = $(id); return !!(el && el.checked); };
   const useDigi = inc('incDigi'), useCw = inc('incCw'), useModel = inc('incModel');
   const lat = Number.isFinite(ctx.lat) ? ctx.lat : 0;
