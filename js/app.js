@@ -123,21 +123,7 @@ function renderBands(ctx) {
   const lede = $('lede');
   lede.innerHTML = ledeHTML(summary, ctx);
   lede.hidden = !lede.innerHTML;
-  // The heard line: live receptions of the operator's own signal from
-  // the callsign filter. Silent until a callsign is entered; a nearby
-  // skimmer counts here even though the scoring window rejects it as
-  // ground wave.
-  const call = $('mycall').value.trim();
-  if (!call) $('heardNote').textContent = '';
-  else if (!ownHeard.length) $('heardNote').textContent = 'not heard in the last 30 min';
-  else {
-    const last = ownHeard.reduce((a, b) => (b.t > a.t ? b : a));
-    const min = Math.floor((Date.now() - last.t) / 60000);
-    const times = ownHeard.length > 1 ? `${ownHeard.length} times` : 'once';
-    $('heardNote').textContent = `heard ${times} in the last 30 min, last by ` +
-      `${last.rx} on ${last.band} at ${Math.round(last.km).toLocaleString()} km, ` +
-      (min < 1 ? 'just now' : `${min} min ago`);
-  }
+  updateHeardNote();
   saveSpots();
 }
 

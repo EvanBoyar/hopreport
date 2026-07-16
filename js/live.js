@@ -128,8 +128,10 @@ function addSpot(band, gridA, gridB, mode, heardMs, txCall, rxCall, src) {
   // deliver one copy per matching subscription when the callsign and
   // grid filters overlap, hence the exact-match guard.
   if (mqttCall && rxCall && String(txCall || '').toUpperCase() === mqttCall &&
-      !ownHeard.some(o => o.t === t && o.band === band && o.rx === rxCall))
+      !ownHeard.some(o => o.t === t && o.band === band && o.rx === rxCall)) {
     ownHeard.push({ t, band, rx: rxCall, km });
+    updateHeardNote();
+  }
   // A signal that never touched the ionosphere says nothing about the
   // bands: anything inside the band's ground-wave radius is dropped.
   // Except on 6m, where the stretch between line of sight and the Es
@@ -219,6 +221,23 @@ function subscribeGrids(c, grids) {
 }
 
 const callTopic = call => `pskr/filter/v2/+/+/${call}/+/+/+/+/+`;
+
+function updateHeardNote() {
+  // The heard line: live receptions of the operator's own signal. Redrawn
+  // on every render tick to keep the minute counters honest, and again
+  // the moment a fresh reception lands so the answer never waits out the
+  // tick. Silent until a callsign is entered; a nearby skimmer counts
+  // here even though the scoring window rejects it as ground wave.
+  const call = $('mycall').value.trim();
+  if (!call) { $('heardNote').textContent = ''; return; }
+  if (!ownHeard.length) { $('heardNote').textContent = 'not heard in the last 30 min'; return; }
+  const last = ownHeard.reduce((a, b) => (b.t > a.t ? b : a));
+  const min = Math.floor((Date.now() - last.t) / 60000);
+  const times = ownHeard.length > 1 ? `${ownHeard.length} times` : 'once';
+  $('heardNote').textContent = `heard ${times} in the last 30 min, last by ` +
+    `${last.rx} on ${last.band} at ${Math.round(last.km).toLocaleString()} km, ` +
+    (min < 1 ? 'just now' : `${min} min ago`);
+}
 
 function setCall(call) {
   // Follows the callsign field: the live feed is additionally filtered

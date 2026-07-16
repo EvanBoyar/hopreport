@@ -44,6 +44,14 @@ test('the heard line renders and stays quiet without a callsign', () => {
   assert.strictEqual(el('heardNote').textContent, 'not heard in the last 30 min');
 });
 
+test('a fresh reception redraws the heard line without waiting for a tick', () => {
+  const { api, el } = load();
+  el('mycall').value = 'K2ABC';
+  api.setCall('K2ABC');
+  api.addSpot('20m', 'FN30', 'JN48', 'FT8', Date.now() - 1000, 'K2ABC', 'DL1X');
+  assert.match(el('heardNote').textContent, /heard once .* just now/);
+});
+
 test('a successful query answers through the heard line, not a count', () => {
   const { api, el, sandbox } = load();
   el('mycall').value = 'K2ABC';
