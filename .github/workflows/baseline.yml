@@ -16,8 +16,10 @@ on:
 permissions:
   contents: write
 
+# Shared with the ionosondes relay: both publish whole-branch snapshots
+# to the data branch, so their runs must never interleave.
 concurrency:
-  group: baseline
+  group: data-branch
   cancel-in-progress: false
 
 jobs:
@@ -31,11 +33,17 @@ jobs:
         with:
           node-version: 22
 
-      - name: Restore state from the data branch
+      - name: Restore every file from the data branch
+        # Every file, not just this workflow's own: the publish below is
+        # a whole-branch snapshot, so anything not restored here (the
+        # ionosonde relay's file, for one) would be wiped by it.
         run: |
           mkdir -p data
           git fetch origin data:refs/remotes/origin/data 2>/dev/null || true
-          git show origin/data:state.json > data/state.json 2>/dev/null || echo '{}' > data/state.json
+          for f in $(git ls-tree --name-only origin/data 2>/dev/null); do
+            git show "origin/data:$f" > "data/$f"
+          done
+          [ -s data/state.json ] || echo '{}' > data/state.json
 
       - name: Install mqtt client
         run: npm install --no-save mqtt
@@ -48,11 +56,14 @@ jobs:
 
       - name: Publish to the data branch
         run: |
+          OLD=$(git ls-remote origin refs/heads/data | cut -f1)
           cd data
           rm -f sample.json
           git init -q -b data
           git config user.name 'hopreport baseline'
           git config user.email 'actions@users.noreply.github.com'
-          git add state.json baseline.json
+          git add -A
           git commit -qm "baseline $(date -u +%FT%TZ)"
-          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" data
+          LEASE=""
+          if [ -n "$OLD" ]; then LEASE="--force-with-lease=refs/heads/data:$OLD"; fi
+          git push -q $LEASE "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" data

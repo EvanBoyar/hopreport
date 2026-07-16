@@ -453,7 +453,8 @@
         Each band's score is the product of four gates, so a single bad factor is enough to
         close a band: score = 100 &times; MUF &times; absorption &times; geomagnetic &times;
         season. The MUF gate uses the nearest fresh ionosonde's measured MUF(3000) when one is
-        reachable through prop.kc2g.com; since that sonde can sit hours of local time away, the
+        available, relayed from prop.kc2g.com twice an hour (the sonde networks publish no
+        browser-readable feed of their own); since that sonde can sit hours of local time away, the
         reading is rescaled by the model's day and night shape at both ends before use. With no
         sonde in reach it falls back to an estimate built from SFI, the time of year (daytime
         F2 runs cooler in summer and hotter in winter at midlatitudes), and the sun's elevation

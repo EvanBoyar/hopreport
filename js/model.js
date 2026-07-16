@@ -123,7 +123,12 @@ async function fetchXray() {
 }
 
 async function fetchIonosonde(pos) {
-  const d = await getJSON('https://prop.kc2g.com/api/stations.json');
+  // Read through the repo's data branch, not prop.kc2g.com directly:
+  // kc2g sends no CORS headers (and GIRO upstream pins access to its
+  // own origin), so no browser can read the source. A workflow
+  // (.github/workflows/ionosondes.yml) relays a trimmed copy every
+  // half hour, and raw.githubusercontent.com serves it with CORS open.
+  const d = await getJSON('https://raw.githubusercontent.com/EvanBoyar/hopreport/data/ionosondes.json');
   const now = Date.now();
   const fresh = d.filter(s =>
     s.mufd != null && s.fof2 != null && s.time &&

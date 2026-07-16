@@ -1,0 +1,57 @@
+name: ionosondes
+# Relays prop.kc2g.com's station list to the data branch every half
+# hour, trimmed to the rows the page reads. No browser can query the
+# sonde networks directly (kc2g sends no CORS headers, GIRO pins access
+# to its own origin), so this relay is what makes the measured-MUF path
+# work on the page at all; raw.githubusercontent.com serves the copy
+# with CORS open. If this workflow stops running, the page falls back
+# to its SFI estimate and loses nothing but the measurement.
+#
+# Minutes avoid the top of the hour like the baseline's do, and the
+# publish is a whole-branch snapshot: every file already on the data
+# branch is restored first, so this workflow and the baseline can never
+# wipe each other's output. The shared concurrency group serializes
+# them; the push lease catches anything the group cannot.
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-branch
+  cancel-in-progress: false
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Restore every file from the data branch
+        run: |
+          mkdir -p data
+          git fetch origin data:refs/remotes/origin/data 2>/dev/null || true
+          for f in $(git ls-tree --name-only origin/data 2>/dev/null); do
+            git show "origin/data:$f" > "data/$f"
+          done
+
+      - name: Fetch and trim the station list
+        run: node tools/fetch-ionosondes.js data/ionosondes.json
+
+      - name: Publish to the data branch
+        run: |
+          OLD=$(git ls-remote origin refs/heads/data | cut -f1)
+          cd data
+          git init -q -b data
+          git config user.name 'hopreport data'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -qm "ionosondes $(date -u +%FT%TZ)"
+          LEASE=""
+          if [ -n "$OLD" ]; then LEASE="--force-with-lease=refs/heads/data:$OLD"; fi
+          git push -q $LEASE "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" data
