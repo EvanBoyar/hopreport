@@ -216,10 +216,10 @@ async function refresh() {
       ion ? 'ok' : 'est',
       ion ? `${ion.name}, ${ion.km} km, ${ion.ageMin} min old` +
             (Math.abs(muf / ion.muf - 1) > 0.02 ? ', scaled to your sun' : '')
-          : 'estimated from SFI, season, and sun'),
+          : 'estimated from SFI, season, and sun angle'),
     fieldTile('LUF', luf < 1.8 ? 'below 160m' : luf.toFixed(1),
       luf < 1.8 ? '' : 'MHz',
-      'est', 'from sun, X-ray, and proton flux'),
+      'est', 'from sun angle, X-ray, and proton flux'),
   ];
   if (ion) tiles.push(fieldTile('foF2', ion.fof2.toFixed(1), 'MHz', 'ok', 'NVIS critical freq'));
   tiles.push(posTile, sunTile);
