@@ -219,7 +219,7 @@ async function refresh() {
           : 'estimated from SFI, season, and sun'),
     fieldTile('LUF', luf < 1.8 ? 'below 160m' : luf.toFixed(1),
       luf < 1.8 ? '' : 'MHz',
-      'est', 'from sun and X-ray flux'),
+      'est', 'from sun, X-ray, and proton flux'),
   ];
   if (ion) tiles.push(fieldTile('foF2', ion.fof2.toFixed(1), 'MHz', 'ok', 'NVIS critical freq'));
   tiles.push(posTile, sunTile);
