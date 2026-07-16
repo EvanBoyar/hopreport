@@ -56,6 +56,7 @@ function load(opts = {}) {
       parseGrid, latLonToGrid, sunElevation, kmBetween, neighborGrids,
       nextSunCrossings, bandRangeList, ledeHTML,
       bandFromHz, estimateMUF, estimateLUF, scoreBand, verdict,
+      parseFeedTime, fetchKp, fetchIonosonde, localizeSondeMUF,
       nthFullWeekendSat, activeContest, activityFactor,
       liveScore, liveStats, addSpot, pruneSpots, renderBands,
       normalizedRate, baselineExpected, setLiveState, windowFill,

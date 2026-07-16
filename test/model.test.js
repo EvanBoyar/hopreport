@@ -85,6 +85,78 @@ test('reach is judged by the second-longest spot', () => {
     'the score keys on the second-longest spot');
 });
 
+test('parseFeedTime reads zoneless stamps as UTC', () => {
+  assert.strictEqual(api.parseFeedTime('2026-07-16T15:37:30'),
+    Date.parse('2026-07-16T15:37:30Z'), 'no zone means UTC, not local');
+  assert.strictEqual(api.parseFeedTime('2026-07-16T15:37:30Z'),
+    Date.parse('2026-07-16T15:37:30Z'), 'an explicit Z passes through');
+  assert.strictEqual(api.parseFeedTime('2026-07-16T15:37:30+02:00'),
+    Date.parse('2026-07-16T15:37:30+02:00'), 'an explicit offset passes through');
+});
+
+test('fetchKp fallback reads the object-shaped product feed', async () => {
+  const { api, sandbox } = load();
+  sandbox.fetch = async url => ({
+    ok: true,
+    json: async () => url.includes('planetary_k_index_1m')
+      ? []
+      : [{ time_tag: '2026-07-16T12:00:00', Kp: 2.33, a_running: 9 },
+         { time_tag: '2026-07-16T15:00:00', Kp: 3.67, a_running: 22 }],
+  });
+  assert.strictEqual(await api.fetchKp(), 3.67);
+});
+
+test('fetchIonosonde survives zoneless timestamps in any timezone', async () => {
+  const { api, sandbox } = load();
+  // 13 minutes old, stamped without a zone suffix the way kc2g does.
+  const t = new Date(Date.now() - 13 * 60000).toISOString().replace(/\.\d+Z$/, '');
+  sandbox.fetch = async () => ({
+    ok: true,
+    json: async () => [{
+      mufd: 16.6, fof2: 4.9, time: t,
+      station: { name: 'Testville', latitude: 43.8, longitude: -112.7 },
+    }],
+  });
+  const ion = await api.fetchIonosonde({ lat: 40.5, lon: -73 });
+  assert.ok(Math.abs(ion.ageMin - 13) <= 1, `age read as ${ion.ageMin} min`);
+  assert.strictEqual(ion.lat, 43.8, 'station position rides along');
+  assert.strictEqual(ion.lon, -112.7);
+});
+
+test('estimateMUF: winter day runs hotter than summer day, night unmoved', () => {
+  const jul = new Date(Date.UTC(2026, 6, 16, 15));
+  const jan = new Date(Date.UTC(2026, 0, 16, 15));
+  const summerDay = api.estimateMUF(107, 60, 0, 50, jul);
+  const winterDay = api.estimateMUF(107, 60, 0, 50, jan);
+  assert.ok(winterDay > summerDay + 5, `winter ${winterDay} vs summer ${summerDay}`);
+  // Calibration anchor: midlatitude summer noon at SFI 107 measured
+  // 17-19 on the sondes; the shy constant should land just above that.
+  assert.ok(summerDay > 19 && summerDay < 22, `summer day ${summerDay}`);
+  // The hemispheres mirror, give or take the calendar's slight
+  // asymmetry around the solstices.
+  assert.ok(Math.abs(api.estimateMUF(107, 60, 0, -50, jul) - winterDay) < 0.1);
+  // Night and the tropics carry no seasonal swing.
+  assert.ok(Math.abs(api.estimateMUF(107, -30, 0, 50, jul)
+                   - api.estimateMUF(107, -30, 0, 50, jan)) < 1e-9);
+  assert.ok(Math.abs(api.estimateMUF(107, 60, 0, 10, jul)
+                   - api.estimateMUF(107, 60, 0, 10, jan)) < 1e-9);
+  // Legacy 3-argument calls keep the flat behavior.
+  assert.ok(Math.abs(api.estimateMUF(107, 60, 0) - (8 + 0.155 * 107)) < 0.01);
+});
+
+test('localizeSondeMUF bends a borrowed reading toward the local sun', () => {
+  const date = new Date(Date.UTC(2026, 0, 15, 18));
+  const ny = { lat: 40.5, lon: -73 };     // early afternoon, sun up
+  const asia = { lat: 40.5, lon: 120 };   // deep night
+  assert.strictEqual(api.localizeSondeMUF(20, 107, 0, date, ny, ny), 20,
+    'the same sun leaves the measurement alone');
+  const up = api.localizeSondeMUF(20, 107, 0, date, ny, asia);
+  const down = api.localizeSondeMUF(20, 107, 0, date, asia, ny);
+  assert.ok(up > 20, 'a night sonde undersells a daylit grid');
+  assert.ok(down < 20, 'a daylit sonde oversells a grid at night');
+  assert.ok(up <= 20 * 1.5 && down >= 20 * 0.65, 'the clamp holds');
+});
+
 test('scoreBand stays within 0..100 and gates multiply', () => {
   const ctx = { muf: 20, kp: 2, sunEl: 30, lat: 40.5, lon: -74, flareMult: 1 };
   for (const b of api.BANDS) {

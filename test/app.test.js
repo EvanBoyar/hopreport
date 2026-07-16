@@ -12,7 +12,9 @@ test('a geolocation fix fills the grid and renders the report', async () => {
   sandbox.__geo.ok({ coords: { latitude: 40.76, longitude: -73.98 } });
   assert.strictEqual(els.grid.value, 'FN30as');
   await settle();
-  assert.match(els.clockline.innerHTML, /^issued \d{1,2} [A-Z][a-z]{2} \d{4} \d{4} UTC/);
+  assert.ok(!els.clockline.innerHTML.includes('issued'), 'no issued stamp in the masthead');
+  assert.strictEqual(els.clockline.hidden, !els.clockline.innerHTML,
+    'the dateline hides exactly when it has no flags');
   assert.ok(els.bands.innerHTML.includes('20m'), 'band log rendered');
 });
 

@@ -57,6 +57,17 @@ async function getJSON(url) {
   return r.json();
 }
 
+function parseFeedTime(s) {
+  // Some feeds (kc2g stations.json among them) stamp UTC times with no
+  // zone suffix, and Date.parse reads a zoneless string as local time.
+  // That slides every age test by the viewer's UTC offset: west of
+  // Greenwich the freshness gate quietly loosens by hours, east of it
+  // a minutes-old reading gets rejected as stale. A stamp without an
+  // explicit zone is read as the UTC it actually is.
+  s = String(s);
+  return Date.parse(/[zZ]$|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z');
+}
+
 async function fetchSFI() {
   const d = await getJSON('https://services.swpc.noaa.gov/json/f107_cm_flux.json');
   d.sort((a, b) => a.time_tag < b.time_tag ? -1 : 1);
@@ -76,15 +87,24 @@ async function fetchKp() {
       if (Number.isFinite(v)) return v;
     }
   } catch (e) { /* fall through to product feed */ }
-  // Fallback: product feed. Locate the Kp column from the header row and
-  // walk back past any null or blank rows.
+  // Fallback: the product feed, which has shipped two shapes so far.
+  // It began as rows-under-a-header-row and changed in 2026 to one
+  // object per synoptic period, so both are handled and either way the
+  // walk runs back past any null or blank entries.
   const d = await getJSON('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json');
-  const header = (d[0] || []).map(h => String(h).toLowerCase());
-  let col = header.findIndex(h => h === 'kp' || h.includes('kp'));
-  if (col === -1) col = 1;
-  for (let i = d.length - 1; i >= 1; i--) {
-    const v = parseFloat(d[i][col]);
-    if (Number.isFinite(v)) return v;
+  if (d.length && !Array.isArray(d[0])) {
+    for (let i = d.length - 1; i >= 0; i--) {
+      const v = +(d[i].Kp ?? d[i].kp_index ?? d[i].kp);
+      if (Number.isFinite(v)) return v;
+    }
+  } else {
+    const header = (d[0] || []).map(h => String(h).toLowerCase());
+    let col = header.findIndex(h => h === 'kp' || h.includes('kp'));
+    if (col === -1) col = 1;
+    for (let i = d.length - 1; i >= 1; i--) {
+      const v = parseFloat(d[i][col]);
+      if (Number.isFinite(v)) return v;
+    }
   }
   throw new Error('no numeric Kp in feed');
 }
@@ -107,7 +127,7 @@ async function fetchIonosonde(pos) {
   const now = Date.now();
   const fresh = d.filter(s =>
     s.mufd != null && s.fof2 != null && s.time &&
-    (now - Date.parse(s.time)) < 100 * 60 * 1000 &&
+    (now - parseFeedTime(s.time)) < 100 * 60 * 1000 &&
     s.station && s.station.latitude != null
   );
   let best = null, bestKm = Infinity;
@@ -119,20 +139,50 @@ async function fetchIonosonde(pos) {
   return {
     muf: +best.mufd, fof2: +best.fof2,
     name: best.station.name, km: Math.round(bestKm),
-    ageMin: Math.round((now - Date.parse(best.time)) / 60000)
+    lat: +best.station.latitude, lon: +best.station.longitude,
+    ageMin: Math.round((now - parseFeedTime(best.time)) / 60000)
   };
 }
 
 /* ---------- model ---------- */
 
-function estimateMUF(sfi, sunEl, kp) {
-  const day = 8 + 0.155 * sfi;
-  const night = 0.45 * day + 3.5;
+function estimateMUF(sfi, sunEl, kp, lat = 0, date = new Date()) {
+  // Daytime F2 runs cooler in the summer hemisphere and hotter in the
+  // winter one (the winter anomaly). Checked against every fresh kc2g
+  // ionosonde on 2026-07-16 (SFI 107): a flat day term read 5 to 8 MHz
+  // high across summer midlatitudes and 6 MHz low at winter ones, while
+  // the night term read unbiased, so only the day term is scaled. The
+  // cosine peaks at the solstices; the weight ramps in from 30 to 55
+  // degrees because the tropics showed no such swing (their misses are
+  // equatorial-anomaly physics this estimate does not attempt). The
+  // 0.22 sits deliberately under the single-epoch best fit of 0.33,
+  // pending a winter sample. Callers that pass no position get the old
+  // flat behavior.
+  const doy = (date - Date.UTC(date.getUTCFullYear(), 0, 0)) / 86400000;
+  const summer = Math.cos(2 * Math.PI * (doy - 172) / 365.25) * (lat >= 0 ? 1 : -1);
+  const anomaly = 1 - 0.22 * summer * Math.min(1, Math.max(0, (Math.abs(lat) - 30) / 25));
+  const base = 8 + 0.155 * sfi;
+  const day = base * anomaly;
+  const night = 0.45 * base + 3.5;
   const rad = Math.PI / 180;
   const dayFrac = Math.min(1, Math.max(0, (Math.sin(sunEl * rad) + 0.12) / 0.62));
   let muf = night + (day - night) * Math.pow(dayFrac, 0.7);
   muf *= Math.max(0.7, 1 - 0.05 * Math.max(0, kp - 3));
   return muf;
+}
+
+function localizeSondeMUF(muf, sfi, kp, date, here, there) {
+  // The sonde search radius spans three time zones, so a borrowed
+  // reading can describe a different part of the day: Idaho's morning
+  // ionosphere is not New York's noon, and a sonde still in daylight
+  // says little about a grid past sunset. The measurement is bent by
+  // the model's own diurnal and seasonal shape evaluated at both ends,
+  // so the sonde anchors the level and the model steers the local
+  // correction. Similar suns leave the reading untouched; the clamp
+  // keeps the shape, itself an estimate, from ever overruling the
+  // measurement by more than half.
+  const at = p => estimateMUF(sfi, sunElevation(p.lat, p.lon, date), kp, p.lat, date);
+  return muf * Math.min(1.5, Math.max(0.65, at(here) / at(there)));
 }
 
 function estimateLUF(sunEl, flareMult) {

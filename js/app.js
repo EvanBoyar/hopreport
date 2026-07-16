@@ -6,8 +6,6 @@
 
 const $ = id => document.getElementById(id);
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const hhmmUTC = d =>
   String(d.getUTCHours()).padStart(2, '0') + String(d.getUTCMinutes()).padStart(2, '0');
 
@@ -136,7 +134,7 @@ async function refresh() {
       ? 'That does not parse as a Maidenhead locator. Try FN30 or FN30as.'
       : 'No location yet. Enter your Maidenhead grid above, or allow the location prompt and the report fills in on its own.';
     msg.classList.add('show');
-    $('clockline').textContent = 'awaiting a location';
+    $('clockline').hidden = true;
     return;
   }
 
@@ -148,13 +146,17 @@ async function refresh() {
   try { localStorage.setItem('hopGrid', $('grid').value.trim().toUpperCase()); } catch (e) {}
   const contest = activeContest(now, pos.lat, pos.lon);
   const sun = nextSunCrossings(pos.lat, pos.lon, now);
-  // Greyline: the sun within 6 degrees of the horizon, either side. The
-  // terminator is when the low bands do their best work, so it earns a
-  // flag in the dateline.
-  $('clockline').innerHTML =
-    `issued ${now.getUTCDate()} ${MONTHS[now.getUTCMonth()]} ${now.getUTCFullYear()} ${hhmmUTC(now)} UTC` +
-    (Math.abs(sunEl) <= 6 ? ' / <span class="grey">greyline</span>' : '') +
-    (contest ? ` / ${contest.nm} weekend` : '');
+  // The dateline carries flags only and hides itself when there is
+  // nothing to flag. Greyline: the sun within 6 degrees of the horizon,
+  // either side, since the terminator is when the low bands do their
+  // best work. A contest weekend gets named because it explains a
+  // flooded feed.
+  const flags = [];
+  if (Math.abs(sunEl) <= 6) flags.push('<span class="grey">greyline</span>');
+  if (contest) flags.push(`${contest.nm} weekend`);
+  const clock = $('clockline');
+  clock.innerHTML = flags.join(' / ');
+  clock.hidden = !flags.length;
 
   // Position and sun are known before any fetch answers; they trail the
   // row (least important) but render from the first paint.
@@ -190,8 +192,9 @@ async function refresh() {
   const xr  = xrOk  ? xrR.value  : { cls: '?', mult: 1 };
   const ion = ionOk ? ionR.value : null;
 
-  let muf = ion ? ion.muf : estimateMUF(sfi, sunEl, kp);
-  if (!Number.isFinite(muf) || muf <= 0) muf = estimateMUF(120, sunEl, 2);
+  let muf = ion ? localizeSondeMUF(ion.muf, sfi, kp, now, pos, ion)
+                : estimateMUF(sfi, sunEl, kp, pos.lat, now);
+  if (!Number.isFinite(muf) || muf <= 0) muf = estimateMUF(120, sunEl, 2, pos.lat, now);
   const luf = estimateLUF(sunEl, xr.mult);
 
   const tiles = [
@@ -206,8 +209,9 @@ async function refresh() {
       xrOk ? 'GOES long band' : 'unavailable, quiet assumed'),
     fieldTile('MUF(3000)', muf.toFixed(1), 'MHz',
       ion ? 'ok' : 'est',
-      ion ? `${ion.name}, ${ion.km} km, ${ion.ageMin} min old`
-          : 'estimated from SFI and sun'),
+      ion ? `${ion.name}, ${ion.km} km, ${ion.ageMin} min old` +
+            (Math.abs(muf / ion.muf - 1) > 0.02 ? ', scaled to your sun' : '')
+          : 'estimated from SFI, season, and sun'),
     fieldTile('LUF', luf < 1.8 ? 'below 160m' : luf.toFixed(1),
       luf < 1.8 ? '' : 'MHz',
       'est', 'from sun and X-ray flux'),

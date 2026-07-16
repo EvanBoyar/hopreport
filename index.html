@@ -86,25 +86,27 @@
   .inner { padding: 16px 28px 20px; }
 
   /* ---- masthead ---- */
-  /* The day/night switch is pinned to the top right corner whatever the
-     width. The header reserves its footprint only when wide enough for
-     the grid form to reach that corner (a full single row needs about
-     797px of content, which exists from ~885px viewports); anywhere
-     narrower the form lives on its own row and a reserve would only
-     steal width from it. */
+  /* One row when it fits: nameplate (mark, title, byline) at the left;
+     locator, update, and source toggles at the right; the day/night
+     switch pinned to the corner, whose footprint the reserve keeps
+     clear. The locator input carries its own name (placeholder and
+     aria-label), so there is no standalone Grid label to widen the
+     row. Below 900px the form drops to its own row, flush left under
+     the title, and the phone rules take over from 620px down. */
   header {
     display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
     position: relative;
-  }
-  @media (min-width: 800px) {
-    header { padding-right: 56px; }
   }
   .mark { display: block; line-height: 0; }
   .mark svg { display: block; }
   .mark:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
   .titleline { display: flex; align-items: center; gap: 9px; }
+  /* The title fills the mark's height on its own: the dateline under it
+     is flags only (greyline, contest weekend) and is usually absent.
+     28px is the ceiling that still leaves the whole control group room
+     on the nameplate row inside the 804px card. */
   h1 {
-    font-family: var(--display); font-weight: 800; font-size: 25px;
+    font-family: var(--display); font-weight: 800; font-size: 28px;
     letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.05;
   }
   /* day/night switch: a little sun or moon crossing a pill-shaped sky */
@@ -145,8 +147,19 @@
     font-size: 13px; line-height: 1.5;
     margin: 7px 0 2px; max-width: 74ch;
   }
-  .gridform { margin-left: auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 9px; }
+  /* The form has exactly two homes: beside the title, flush right, or
+     on its own row flush left under the title, the same shape phones
+     use. It never floats right on a row of its own, so the flip to
+     beside-the-title waits for 900px: the card is pinned at its 860px
+     maximum from 888px of viewport (14px body padding a side), and the
+     extra headroom covers a desktop scrollbar, so the single row can
+     never be asked to fit in less than the full card. */
+  .gridform { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 9px; flex-basis: 100%; }
   .gridform .srcbox { margin-left: 6px; align-self: center; }
+  @media (min-width: 900px) {
+    .gridform { flex-basis: auto; margin-left: auto; }
+    header { padding-right: 56px; }
+  }
   .gridform label {
     font-family: var(--display); font-weight: 700; font-size: 12px;
     letter-spacing: 0.15em; color: var(--faded);
@@ -315,11 +328,11 @@
 
   @media (max-width: 620px) {
     .inner { padding: 14px 14px 18px; }
-    /* Tighter masthead: mark, title, and dateline share a row so the lede
-       and more of the log land above the fold. */
+    /* Tighter masthead: mark and title share a row so the lede and more
+       of the log land above the fold. */
     header { gap: 6px 10px; }
     .mark svg { width: 30px; height: 30px; }
-    h1 { font-size: 19px; }
+    h1 { font-size: 22px; }
     .dateline { font-size: 11px; }
     .lede { font-size: 12.5px; }
     .band { grid-template-columns: 50px 1fr 76px; gap: 10px; }
@@ -327,17 +340,17 @@
     .band .fq { font-size: 9px; letter-spacing: 0; white-space: nowrap; }
     .stamp { font-size: 10px; letter-spacing: 0.13em; padding: 2px 6px 1px 8px; }
     /* The grid row must fit beside the checkboxes on a 360px phone, so
-       everything slims down and the standalone label goes: the input's
-       placeholder and aria-label carry the field's name. */
-    .gridform { margin-left: 0; gap: 8px; }
-    .gridform > label { display: none; }
+       everything slims down. */
+    .gridform { gap: 8px; }
     #grid { width: 84px; font-size: 17px; }
     .gridform .srcbox { margin-left: 0; gap: 8px; }
     .cwbox { gap: 4px; }
     button { padding: 7px 10px; }
-    /* Only the title row shares the switch's row on phones; it alone
-       clears the corner. */
-    .titleline { padding-right: 44px; }
+    /* The title keeps clear of the switch's corner. On the narrowest
+       phones the whole nameplate wraps below the mark, which leaves the
+       mark and switch balancing the first row; the byline wrapping
+       under the title is the last resort below ~355px. */
+    .titleline { padding-right: 44px; flex-wrap: wrap; row-gap: 1px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .fill { transition: none; }
@@ -381,10 +394,9 @@
           <h1>The Hop Report</h1>
           <a class="byline" href="https://www.qrz.com/db/NR8E">by NR8E</a>
         </div>
-        <div class="dateline" id="clockline">preparing report</div>
+        <div class="dateline" id="clockline" hidden></div>
       </div>
       <div class="gridform">
-        <label for="grid">Grid</label>
         <input id="grid" placeholder="FN30as" maxlength="6" spellcheck="false" autocomplete="off" aria-label="Maidenhead locator">
         <button id="go">Update</button>
         <span class="srcbox" role="group" aria-label="Sources counted in the scores">
@@ -441,8 +453,11 @@
         Each band's score is the product of four gates, so a single bad factor is enough to
         close a band: score = 100 &times; MUF &times; absorption &times; geomagnetic &times;
         season. The MUF gate uses the nearest fresh ionosonde's measured MUF(3000) when one is
-        reachable through prop.kc2g.com, and otherwise falls back to an estimate built from
-        SFI. A band scores full marks below roughly 0.85 of the MUF and falls off sharply
+        reachable through prop.kc2g.com; since that sonde can sit hours of local time away, the
+        reading is rescaled by the model's day and night shape at both ends before use. With no
+        sonde in reach it falls back to an estimate built from SFI, the time of year (daytime
+        F2 runs cooler in summer and hotter in winter at midlatitudes), and the sun's elevation
+        at your grid. A band scores full marks below roughly 0.85 of the MUF and falls off sharply
         above it. The absorption gate models D-layer loss from the sun's elevation at your
         grid, scaled by 1/f&sup2; and multiplied by the current GOES X-ray flare class, which
         is what closes 160 through 40&nbsp;m in daylight and opens them at night. The
