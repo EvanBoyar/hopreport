@@ -44,6 +44,21 @@ test('the heard line renders and stays quiet without a callsign', () => {
   assert.strictEqual(el('heardNote').textContent, 'not heard in the last 30 min');
 });
 
+test('a successful query answers through the heard line, not a count', () => {
+  const { api, el, sandbox } = load();
+  el('mycall').value = 'K2ABC';
+  api.queryMySpots();
+  assert.strictEqual(el('qslNote').textContent, 'querying');
+  sandbox.pskrCb({ receptionReport: [{
+    frequency: 14074000, senderLocator: 'FN30', receiverLocator: 'JN48',
+    mode: 'FT8', flowStartSeconds: (Date.now() - 60000) / 1000,
+    senderCallsign: 'K2ABC', receiverCallsign: 'DL1X',
+  }] });
+  assert.strictEqual(el('qslNote').textContent, '', 'the count note is gone');
+  assert.strictEqual(api.ownHeard.length, 1, 'the report landed on the heard list');
+  assert.strictEqual(api.ownHeard[0].rx, 'DL1X');
+});
+
 test('the heard list survives a reload and ages out with the window', () => {
   const store = {};
   const a = load({ store });

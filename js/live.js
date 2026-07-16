@@ -272,7 +272,7 @@ function attemptConnect(urls, grids, round = 1) {
     setLiveState(`no answer on round ${round}. Retrying in ${delay} s; scores are model only meanwhile.`, 'warn');
     if (round === 3) {
       $('qslNote').textContent =
-        'Three rounds without an answer. The broker accepts secure WebSockets from https pages, so a firewall on port 1886 or a broker outage is likely. Retries continue in the background.';
+        'Three rounds without an answer. The broker accepts secure WebSockets from https pages, so this is a firewall on port 1886, a broker outage, or this browser\'s own network stack gone stale, which can happen after a sleep and wake. Restarting the browser clears a stale stack; if the page connects fine in a different browser, that was it. Retries continue in the background.';
     }
     setTimeout(() => {
       if (mqttGrids !== grids.join(',')) return;
@@ -341,9 +341,11 @@ window.pskrCb = function (data) {
       Number(r.flowStartSeconds) * 1000, r.senderCallsign, r.receiverCallsign, 'r');
     added++;
   }
-  // A background query keeps quiet about an empty answer; the reminder to
-  // transmit is for the button.
-  if (added) $('qslNote').textContent = `${added} reception reports folded into the live layer`;
+  // The heard line is the answer to the button's question, so a
+  // successful query speaks through it instead of leaving a count here.
+  // The note keeps only the words the heard line cannot say: the empty
+  // answer after a button press. A background query stays quiet even then.
+  if (added) $('qslNote').textContent = '';
   else if (!qslAuto) $('qslNote').textContent = 'no reports found. Transmit a few FT8 or CW CQ cycles first.';
   if (lastCtx) renderBands(lastCtx);
 };
@@ -357,6 +359,9 @@ function queryMySpots(auto) {
   const call = $('mycall').value.trim().toUpperCase();
   if (!call) { if (!auto) $('qslNote').textContent = 'enter your callsign first'; return; }
   try { localStorage.setItem('hopCall', call); } catch (e) {}
+  // Any path that queries also arms the heard line, so the results always
+  // have somewhere to land, even if the field never fired its change event.
+  setCall(call);
   const wait = 5 * 60 * 1000 - (Date.now() - lastQsl);
   if (wait > 0) {
     if (!auto) $('qslNote').textContent =
