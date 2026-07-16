@@ -64,10 +64,10 @@ function renderBands(ctx) {
   // sources, both directions), so a filtered view falls back to the
   // universal constant rather than compare unlike quantities.
   const grids = (useDigi && useCw && baselineData) ? neighborGrids({ lat, lon }) : null;
-  // How much of the hour window has actually filled: the feed has no
-  // history, so counts are extrapolated to a rate by liveScore, and the
-  // live share of the blend ramps up with coverage (full weight from 30
-  // minutes on) so thin extrapolations do not get a full vote.
+  // How much of the 30 minute window has actually filled: the feed has
+  // no history, so counts are extrapolated to a rate by liveScore, and
+  // the live share of the blend ramps up with coverage (full weight from
+  // 15 minutes on) so thin extrapolations do not get a full vote.
   const fill = windowFill();
   const liveW = 0.6 * Math.min(1, fill / 0.5);
   const summary = [];
@@ -288,13 +288,28 @@ if (parseGrid(urlGrid)) {
   { maximumAge: 10 * 60 * 1000, timeout: 10000 });
 }
 
+// The callsign is remembered like the grid, and the reception-report
+// query runs by itself on the same cadence PSK Reporter allows: once
+// after the first report and every five minutes after, skipping quietly
+// whenever the field is blank or the limit has not lapsed. Typing a new
+// callsign queries right away rather than waiting out the interval.
+let storedCall = '';
+try { storedCall = (localStorage.getItem('hopCall') || '').trim(); } catch (e) {}
+if (storedCall && !$('mycall').value.trim()) $('mycall').value = storedCall;
+$('mycall').addEventListener('change', () => {
+  const call = $('mycall').value.trim().toUpperCase();
+  try { localStorage.setItem('hopCall', call); } catch (e) {}
+  if (call) queryMySpots(true);
+});
+setInterval(() => queryMySpots(true), 5 * 60 * 1000);
+
 // Phones rarely fire unload events; the hidden state is the reliable
 // last chance to persist the window before the tab is culled.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') saveSpots();
 });
 
-refresh();
+refresh().then(() => queryMySpots(true));
 loadBaseline();
 setInterval(refresh, 10 * 60 * 1000);                              // space weather
 setInterval(() => { if (lastCtx) renderBands(lastCtx); }, 30000);  // live spots

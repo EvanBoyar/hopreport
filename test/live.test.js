@@ -3,14 +3,14 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { load } = require('./helper');
 
-test('addSpot ages by heard-time and enforces the hour window', () => {
+test('addSpot ages by heard-time and enforces the 30 minute window', () => {
   const { api } = load();
   const now = Date.now();
-  api.addSpot('20m', 'FN30', 'IO91', 'CW', now - 50 * 60 * 1000);
-  assert.strictEqual(api.spots.length, 1, '50-min-old spot kept');
-  assert.strictEqual(api.spots[0].t, now - 50 * 60 * 1000);
-  api.addSpot('20m', 'FN30', 'IO91', 'CW', now - 70 * 60 * 1000);
-  assert.strictEqual(api.spots.length, 1, '70-min-old spot rejected');
+  api.addSpot('20m', 'FN30', 'IO91', 'CW', now - 25 * 60 * 1000);
+  assert.strictEqual(api.spots.length, 1, '25-min-old spot kept');
+  assert.strictEqual(api.spots[0].t, now - 25 * 60 * 1000);
+  api.addSpot('20m', 'FN30', 'IO91', 'CW', now - 35 * 60 * 1000);
+  assert.strictEqual(api.spots.length, 1, '35-min-old spot rejected');
   api.addSpot('20m', 'FN30', 'JN48', 'FT8', now + 120000);
   assert.ok(api.spots[1].t <= Date.now(), 'future timestamp clamped');
   api.addSpot('20m', 'FN30', 'JN58', 'FT8');

@@ -347,7 +347,7 @@ function liveScore(band, st, act = null, ref = null) {
   // of CW spots during CQ WW CW is business as usual, not an opening.
   // Reach is left alone otherwise; distance is propagation's doing, not
   // the operators'. It is judged by the second-longest spot so a single
-  // mangled locator in the feed cannot hold a band open for an hour.
+  // mangled locator in the feed cannot hold a band open all window long.
   // The denominator is the population-scaled reference when the baseline
   // knows the area, else the universal 40: 40 normalized spots/hour at
   // evening peak reads the same as 10 spots did over the old 15 minute

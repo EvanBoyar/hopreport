@@ -465,7 +465,7 @@
       <p>
         The live layer subscribes to PSK Reporter's public MQTT feed over WebSockets, filtered
         to spots transmitted from or received in your grid square and its eight neighbors,
-        kept for a rolling hour, aged by when each spot was heard rather than when it
+        kept for a rolling 30 minutes, aged by when each spot was heard rather than when it
         arrived. A spot whose two ends sit closer than the band's ground-wave radius
         (350&nbsp;km on 160&nbsp;m shrinking to 150&nbsp;km on 10&nbsp;m, between square
         centers, since surface-wave reach falls as frequency rises) is discarded, because
@@ -478,8 +478,8 @@
         of 500&nbsp;km count as sky. The
         feed carries no history, so the window fills gradually after the page
         opens; counts are scaled to the filled fraction so bands do not appear to improve
-        for an hour after loading, and the live share of the blend ramps up with coverage.
-        Reports folded in by the callsign query already carry a full hour of history and
+        for half an hour after loading, and the live share of the blend ramps up with coverage.
+        Reports folded in by the callsign query already carry the whole window of history and
         are counted without that scaling; leaving the page open genuinely sharpens the
         scores as the window fills. The window also survives a reload: this browser keeps
         the spots and restores them when the page reopens on the same grid, and the time
@@ -522,7 +522,8 @@
         correction, since the stations it hears follow many clocks, though mostly regional
         ones. The
         callsign query folds your own reception reports in through the retrieval API, limited
-        to one query every five minutes under PSK Reporter's rules. If every source fails at
+        to one query every five minutes under PSK Reporter's rules; once a callsign is
+        entered it is remembered and queried on that cadence automatically. If every source fails at
         once, the browser or network is blocking cross-origin requests; grab the project
         folder and open index.html locally.
       </p>

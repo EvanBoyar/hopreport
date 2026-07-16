@@ -2,7 +2,11 @@
 // The Hop Report — PSK Reporter live layer (MQTT + retrieval)
 // Plain script (not a module) so the page keeps working from file://.
 
-const LIVE_WINDOW = 60 * 60 * 1000;
+const LIVE_WINDOW = 30 * 60 * 1000;
+// Everything downstream of liveStats speaks spots per hour, whatever the
+// window length: the scorer's reference and the population baseline are
+// both hourly rates, so window counts are scaled up by this factor.
+const WINDOWS_PER_HOUR = 3600000 / LIVE_WINDOW;
 
 /* ---------- live spot layer (PSK Reporter) ---------- */
 
@@ -31,40 +35,55 @@ function pruneSpots() {
   spots = spots.filter(s => s.t > cut);
 }
 
-/* ---------- persistence: a reload keeps the hour window ---------- */
+/* ---------- persistence: a reload keeps the spot window ---------- */
 
 const SPOTS_KEY = 'hopSpots';
+const BAND_ORD = Object.fromEntries(BANDS.map((b, i) => [b.nm, i]));
 let restoredKey = '';
 
 function saveSpots() {
   // Serialized on every render tick and when the tab hides: cheap, and
   // it means a reload starts from the evidence it already had instead
-  // of an empty window.
+  // of an empty window. Each spot is a bare row of age in whole seconds,
+  // band ordinal, and 0/1 flags rather than a keyed object: a busy
+  // neighborhood holds tens of thousands of spots, and the object form
+  // ran the blob into the browser's per-origin storage quota.
   if (!mqttGrids && !spots.length) return;
+  const savedAt = Date.now();
   try {
     localStorage.setItem(SPOTS_KEY, JSON.stringify({
-      gridKey: mqttGrids, savedAt: Date.now(), liveSince, spots,
+      v: 2, gridKey: mqttGrids, savedAt, liveSince,
+      spots: spots.map(s => [Math.round((savedAt - s.t) / 1000), BAND_ORD[s.band],
+        s.km, s.md, s.rx ? 1 : 0, s.who, s.tp ? 1 : 0, s.src === 'r' ? 1 : 0]),
     }));
   } catch (e) { /* storage full or unavailable: persistence is a bonus */ }
 }
 
 function restoreSpots(key) {
   // Coverage survives as an amount, not a place: the old session covered
-  // [liveSince, savedAt], only the part still inside the rolling hour
+  // [liveSince, savedAt], only the part still inside the rolling window
   // counts, and the closed-tab gap is uncovered time exactly like a
   // dropped link. The estimator downstream only ever divides counts by
-  // covered time, so no scoring logic changes.
+  // covered time, so no scoring logic changes. A save in the old keyed
+  // format has no v stamp and is discarded, a one-time loss at upgrade.
   if (restoredKey === key) return;
   restoredKey = key;
   let d = null;
   try { d = JSON.parse(localStorage.getItem(SPOTS_KEY)); } catch (e) {}
-  if (!d || d.gridKey !== key || !Array.isArray(d.spots)) return;
+  if (!d || d.v !== 2 || d.gridKey !== key || !Array.isArray(d.spots)) return;
   const now = Date.now();
   const gap = now - d.savedAt;
   if (!(gap >= 0) || gap >= LIVE_WINDOW) return;   // all aged out, or clock skew
   const cut = now - LIVE_WINDOW;
-  spots = d.spots.filter(s =>
-    s && Number.isFinite(s.t) && s.t > cut && BAND_BY_NAME[s.band]);
+  spots = [];
+  for (const r of d.spots) {
+    if (!Array.isArray(r) || !Number.isFinite(r[0]) || !Number.isFinite(r[2])) continue;
+    const band = BANDS[r[1]] ? BANDS[r[1]].nm : '';
+    const t = d.savedAt - r[0] * 1000;
+    if (!band || t <= cut) continue;
+    spots.push({ t, band, km: r[2], md: String(r[3] || ''), rx: !!r[4],
+                 who: String(r[5] || ''), tp: !!r[6], src: r[7] ? 'r' : 'm' });
+  }
   if (d.liveSince) {
     const covered = Math.min(Math.max(0, d.savedAt - d.liveSince), LIVE_WINDOW - gap);
     liveSince = now - covered;
@@ -81,7 +100,9 @@ function addSpot(band, gridA, gridB, mode, heardMs, txCall, rxCall, src) {
   const a = parseGrid((gridA || '').slice(0, 4));
   const b = parseGrid((gridB || '').slice(0, 4));
   if (!a || !b) return;
-  const km = kmBetween(a, b), md = mode || '';
+  // Whole kilometers: the grid centers already carry a square of slack,
+  // and the persisted rows should not spend fifteen digits per distance.
+  const km = Math.round(kmBetween(a, b)), md = mode || '';
   // A signal that never touched the ionosphere says nothing about the
   // bands: anything inside the band's ground-wave radius is dropped.
   // Except on 6m, where the stretch between line of sight and the Es
@@ -117,13 +138,15 @@ function liveStats(bandName, useDigi, useCw, fill) {
   // CW spots reach the feed through RBN's skimmers; the CW switch gates
   // them and the digi switch gates every other mode. Counts are kept per
   // mode and per direction so the scorer can weigh and normalize each,
-  // both raw (n, cw and the display splits) and coverage-weighted (w*):
-  // an MQTT spot was caught in only the filled fraction of the hour, so
-  // it stands for 1/fill spots per hour (capped at x12, five minutes of
-  // data), while a retrieval spot arrives with the full hour behind it
-  // and counts once. max2 is the second-longest distance; reach is
-  // scored on it so one mangled locator cannot swing a band.
-  const w = 1 / Math.max(1 / 12, Math.min(1, fill ?? 1));
+  // both raw (n, cw and the display splits) and coverage-weighted (w*).
+  // The weighted counts are hourly rates: an MQTT spot was caught in only
+  // the filled fraction of the 30 minute window, so it stands for
+  // WINDOWS_PER_HOUR/fill spots per hour (never extrapolating from less
+  // than five minutes of data), while a retrieval spot arrives with the
+  // whole window behind it and counts WINDOWS_PER_HOUR. max2 is the
+  // second-longest distance; reach is scored on it so one mangled
+  // locator cannot swing a band.
+  const w = WINDOWS_PER_HOUR / Math.max(1 / 6, Math.min(1, fill ?? 1));
   let n = 0, max = 0, max2 = 0, cw = 0, dRx = 0, dTx = 0, cRx = 0, cTx = 0,
       wdRx = 0, wdTx = 0, wcRx = 0, wcTx = 0, tN = 0, tMax = 0;
   for (const x of spots) {
@@ -134,7 +157,7 @@ function liveStats(bandName, useDigi, useCw, fill) {
     // counts or reach.
     if (x.tp) { tN++; if (x.km > tMax) tMax = x.km; continue; }
     n++;
-    const wx = x.src === 'r' ? 1 : w;
+    const wx = x.src === 'r' ? WINDOWS_PER_HOUR : w;
     if (isCw) { cw++; if (x.rx) { cRx++; wcRx += wx; } else { cTx++; wcTx += wx; } }
     else if (x.rx) { dRx++; wdRx += wx; }
     else { dTx++; wdTx += wx; }
@@ -145,9 +168,9 @@ function liveStats(bandName, useDigi, useCw, fill) {
 }
 
 function windowFill() {
-  // Filled fraction of the hour window. The feed carries no history, so a
-  // fresh page has only minutes of spots; retrieval spots arrive as a full
-  // hour, so no feed at all means the window counts as full.
+  // Filled fraction of the window. The feed carries no history, so a
+  // fresh page has only minutes of spots; retrieval spots arrive with the
+  // window already covered, so no feed at all means it counts as full.
   return liveSince ? Math.min(1, (Date.now() - liveSince) / LIVE_WINDOW) : 1;
 }
 
@@ -272,27 +295,35 @@ window.pskrCb = function (data) {
       Number(r.flowStartSeconds) * 1000, r.senderCallsign, r.receiverCallsign, 'r');
     added++;
   }
-  $('qslNote').textContent = added
-    ? `${added} reception reports from the last hour folded into the live layer`
-    : 'no reports found. Transmit a few FT8 or CW CQ cycles first.';
+  // A background query keeps quiet about an empty answer; the reminder to
+  // transmit is for the button.
+  if (added) $('qslNote').textContent = `${added} reception reports folded into the live layer`;
+  else if (!qslAuto) $('qslNote').textContent = 'no reports found. Transmit a few FT8 or CW CQ cycles first.';
   if (lastCtx) renderBands(lastCtx);
 };
 
-function queryMySpots() {
+let qslAuto = false;
+
+function queryMySpots(auto) {
+  // The button asks loudly; the five minute background cadence (app.js)
+  // passes auto and walks away without a word when the callsign is blank
+  // or the retrieval limit has not lapsed yet.
   const call = $('mycall').value.trim().toUpperCase();
-  if (!call) { $('qslNote').textContent = 'enter your callsign first'; return; }
+  if (!call) { if (!auto) $('qslNote').textContent = 'enter your callsign first'; return; }
+  try { localStorage.setItem('hopCall', call); } catch (e) {}
   const wait = 5 * 60 * 1000 - (Date.now() - lastQsl);
   if (wait > 0) {
-    $('qslNote').textContent =
+    if (!auto) $('qslNote').textContent =
       `PSK Reporter allows one query every 5 minutes. ${Math.ceil(wait / 60000)} min to go.`;
     return;
   }
   lastQsl = Date.now();
   try { localStorage.setItem('hopQslAt', String(lastQsl)); } catch (e) {}
-  $('qslNote').textContent = 'querying';
+  qslAuto = !!auto;
+  if (!auto) $('qslNote').textContent = 'querying';
   const s = document.createElement('script');
   s.src = 'https://retrieve.pskreporter.info/query?senderCallsign=' +
-    encodeURIComponent(call) + '&flowStartSeconds=-3600&rronly=1&callback=pskrCb';
+    encodeURIComponent(call) + '&flowStartSeconds=-1800&rronly=1&callback=pskrCb';
   s.onload = () => s.remove();
   s.onerror = () => { $('qslNote').textContent = 'query failed (blocked or rate limited)'; s.remove(); };
   document.body.appendChild(s);
