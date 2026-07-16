@@ -45,12 +45,12 @@ test('renderBands shows deviation from local normal when the baseline knows the 
   api.myGrids = new Set(['FN30']);
   const t = Date.now();
   for (let i = 0; i < 16; i++) api.addSpot('20m', 'IO91', 'FN30', 'FT8', t - i * 60000 - 1000);
-  api.renderBands({ muf: 20, kp: 2, sunEl: 30, lat: 40.5, lon: -73.5, flareMult: 1 });
+  api.renderBands({ muf: 20, kp: 2, sunEl: 30, lat: 40.5, lon: -73.5, xrayFlux: 4e-7 });
   const row = el('bands').innerHTML.split('<div class="band">').find(r => r.includes('>20m<'));
   assert.match(row, /×<\/b> usual/);
   const bare = el('bands');
   api.baselineData = null;
-  api.renderBands({ muf: 20, kp: 2, sunEl: 30, lat: 40.5, lon: -73.5, flareMult: 1 });
+  api.renderBands({ muf: 20, kp: 2, sunEl: 30, lat: 40.5, lon: -73.5, xrayFlux: 4e-7 });
   assert.doesNotMatch(bare.innerHTML, /usual/);
 });
 

@@ -88,7 +88,7 @@ test('renderBands persists the window as it renders', () => {
   const h = load({ store });
   h.api.connectLive(h.api.parseGrid('FN30'));
   h.api.addSpot('20m', 'IO91', 'FN30', 'FT8', Date.now() - 1000, 'G4X', 'K2A');
-  h.api.renderBands({ muf: 20, kp: 2, sunEl: 30, lat: 40.5, lon: -74, flareMult: 1 });
+  h.api.renderBands({ muf: 20, kp: 2, sunEl: 30, lat: 40.5, lon: -74, xrayFlux: 4e-7 });
   const saved = JSON.parse(store.hopSpots);
   assert.strictEqual(saved.v, 2);
   assert.strictEqual(saved.spots.length, 1);
