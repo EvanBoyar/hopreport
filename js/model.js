@@ -113,13 +113,28 @@ async function fetchXray() {
   const d = await getJSON('https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json');
   const longband = d.filter(e => e.energy === '0.1-0.8nm');
   const flux = +longband[longband.length - 1].flux;
-  let cls, mult;
-  if (flux >= 1e-4)      { cls = 'X' + (flux / 1e-4).toFixed(1); mult = 9; }
-  else if (flux >= 1e-5) { cls = 'M' + (flux / 1e-5).toFixed(1); mult = 3.5; }
-  else if (flux >= 1e-6) { cls = 'C' + (flux / 1e-6).toFixed(1); mult = 1.4; }
-  else if (flux >= 1e-7) { cls = 'B' + (flux / 1e-7).toFixed(1); mult = 1; }
-  else                   { cls = 'A'; mult = 1; }
-  return { cls, mult };
+  let cls;
+  if (flux >= 1e-4)      cls = 'X' + (flux / 1e-4).toFixed(1);
+  else if (flux >= 1e-5) cls = 'M' + (flux / 1e-5).toFixed(1);
+  else if (flux >= 1e-6) cls = 'C' + (flux / 1e-6).toFixed(1);
+  else if (flux >= 1e-7) cls = 'B' + (flux / 1e-7).toFixed(1);
+  else                   cls = 'A';
+  return { cls, flux };
+}
+
+async function fetchProtons() {
+  // GOES integral proton flux, the input to D-RAP's polar cap term.
+  // The energies its formulas want (above 5.2 MeV by day, 2.2 MeV by
+  // night) are not GOES channels: the 5 MeV channel stands in for the
+  // first, and the second is interpolated between the 1 and 5 MeV
+  // channels assuming a power-law spectrum.
+  const d = await getJSON('https://services.swpc.noaa.gov/json/goes/primary/integral-protons-1-day.json');
+  const latest = {};
+  for (const r of d) latest[r.energy] = +r.flux;
+  const j1 = latest['>=1 MeV'], j5 = latest['>=5 MeV'];
+  if (!Number.isFinite(j1) || !Number.isFinite(j5) || j5 <= 0) throw new Error('no proton flux in feed');
+  const gamma = Math.max(0, Math.log(j1 / j5) / Math.log(5));
+  return { day: j5, night: j1 * Math.pow(2.2, -gamma) };
 }
 
 async function fetchIonosonde(pos) {
@@ -190,28 +205,87 @@ function localizeSondeMUF(muf, sfi, kp, date, here, there) {
   return muf * Math.min(1.5, Math.max(0.65, at(here) / at(there)));
 }
 
-function estimateLUF(sunEl, flareMult) {
-  // Derived from the absorption gate, not modeled separately: the frequency
-  // where daytime D-layer loss alone would pull a band below fair (gate 0.3).
-  // Solving exp(-0.25 * s * (10/f)^2 * F) = 0.3 gives f = 4.56 * sqrt(s * F).
-  if (sunEl <= 0) return 0;
-  const s = Math.pow(Math.sin(sunEl * Math.PI / 180), 0.75);
-  return 4.56 * Math.sqrt(s * flareMult);
+function geomagLat(lat, lon) {
+  // Centered-dipole geomagnetic latitude (IGRF pole near 80.7 N,
+  // 72.7 W). Coarse next to D-RAP's invariant-latitude machinery, but
+  // the polar term only needs to know roughly how deep inside the cap
+  // a point sits.
+  const rad = Math.PI / 180;
+  const s = Math.sin(lat * rad) * Math.sin(80.7 * rad) +
+            Math.cos(lat * rad) * Math.cos(80.7 * rad) * Math.cos((lon + 72.7) * rad);
+  return Math.asin(Math.max(-1, Math.min(1, s))) / rad;
+}
+
+function absorptionDb(f, sunEl, xrayFlux, polar) {
+  // D-layer loss in dB at f MHz, vertical round trip, three components.
+  // The quiet-day term is ours: 108.6 * sin(el)^1.5 / f^2, anchored so
+  // overhead sun alone pulls the LUF to 4.56 MHz (about 30 dB at
+  // 1.9 MHz, the textbook quiet midday figure). NOAA D-RAP models no
+  // quiet component, but its angular law is adopted as ground truth:
+  // degraded frequencies taper as cos(chi)^0.75, so absorption under a
+  // 1/f^2 law must carry the square of that taper.
+  // The flare term is D-RAP's, verbatim: the highest affected frequency
+  // (1 dB) is 10*log10(flux) + 65 at the subsolar point, tapers as
+  // cos(chi)^0.75, and other frequencies degrade as (HAF/f)^1.5.
+  // Checked against their published global grid on 2026-07-16.
+  let a = 0;
+  if (sunEl > 0) {
+    const s = Math.pow(Math.sin(sunEl * Math.PI / 180), 0.75);
+    a = 108.6 * s * s / (f * f);
+    const haf = (10 * Math.log10(xrayFlux > 0 ? xrayFlux : 1e-9) + 65) * s;
+    if (haf > 0) a += Math.pow(haf / f, 1.5);
+  }
+  // The polar cap proton term, also D-RAP's: at 30 MHz the day side
+  // absorbs 0.115 * sqrt(J > 5.2 MeV) dB and the night side
+  // 0.020 * sqrt(J > 2.2 MeV), with the same (f0/f)^1.5 law across
+  // frequency. Day and night blend through twilight, since the D region
+  // neither appears nor vanishes at the geometric horizon. The cap
+  // boundary is a Kp-widened dipole-latitude gate standing in for
+  // D-RAP's cutoff-energy model: full effect deep in the cap, fading
+  // to nothing across five degrees at the edge, which sits near 64
+  // degrees geomagnetic when quiet and pushes equatorward as Kp rises.
+  if (polar && polar.protons) {
+    const edge = 64 - 1.2 * Math.min(9, polar.kp || 0);
+    const w = Math.min(1, Math.max(0, (Math.abs(polar.gmLat) - (edge - 2.5)) / 5));
+    if (w > 0) {
+      const dayW = Math.min(1, Math.max(0, (sunEl + 8) / 16));
+      const a30 = dayW * 0.115 * Math.sqrt(Math.max(0, polar.protons.day)) +
+                  (1 - dayW) * 0.020 * Math.sqrt(Math.max(0, polar.protons.night));
+      a += w * a30 * Math.pow(30 / f, 1.5);
+    }
+  }
+  return a;
+}
+
+function estimateLUF(sunEl, xrayFlux, polar) {
+  // Derived from the absorption gate, not modeled separately: the
+  // frequency where D-layer loss alone pulls a band below fair (gate
+  // 0.3, which is 5.23 dB). The terms mix 1/f^2 and 1/f^1.5, so there
+  // is no closed form; bisection converges to more precision than the
+  // display uses in far fewer than 40 rounds. Nonzero at night only
+  // inside the polar cap during a proton event.
+  const target = -10 * Math.log10(0.3);
+  let lo = 0.1, hi = 60;
+  if (absorptionDb(hi, sunEl, xrayFlux, polar) >= target) return hi;
+  if (absorptionDb(lo, sunEl, xrayFlux, polar) < target) return 0;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (absorptionDb(mid, sunEl, xrayFlux, polar) >= target) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
 }
 
 function scoreBand(band, ctx) {
-  const rad = Math.PI / 180;
-
   // 1. MUF gate
   const r = band.f / ctx.muf;
   const m = r <= 0.82 ? 1 : Math.exp(-Math.pow((r - 0.82) / 0.16, 2));
 
-  // 2. D-layer absorption gate
-  let a = 1;
-  if (ctx.sunEl > 0) {
-    const sun = Math.pow(Math.sin(ctx.sunEl * rad), 0.75);
-    a = Math.exp(-0.25 * sun * Math.pow(10 / band.f, 2) * ctx.flareMult);
-  }
+  // 2. D-layer absorption gate (quiet term, D-RAP's flare term, and
+  // D-RAP's polar proton term when a proton reading is on hand)
+  const polar = ctx.protons
+    ? { gmLat: geomagLat(ctx.lat, ctx.lon || 0), kp: ctx.kp, protons: ctx.protons }
+    : null;
+  const a = Math.pow(10, -absorptionDb(band.f, ctx.sunEl, ctx.xrayFlux, polar) / 10);
 
   // 3. Geomagnetic gate
   const latFactor = Math.min(1, Math.max(0.1, (Math.abs(ctx.lat) - 25) / 35));

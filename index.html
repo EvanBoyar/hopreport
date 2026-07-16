@@ -459,9 +459,12 @@
         sonde in reach it falls back to an estimate built from SFI, the time of year (daytime
         F2 runs cooler in summer and hotter in winter at midlatitudes), and the sun's elevation
         at your grid. A band scores full marks below roughly 0.85 of the MUF and falls off sharply
-        above it. The absorption gate models D-layer loss from the sun's elevation at your
-        grid, scaled by 1/f&sup2; and multiplied by the current GOES X-ray flare class, which
-        is what closes 160 through 40&nbsp;m in daylight and opens them at night. The
+        above it. The absorption gate models D-layer loss in two parts: a quiet-day term from
+        the sun's elevation at your grid, scaled by 1/f&sup2;, which is what closes 160 through
+        40&nbsp;m in daylight and opens them at night, plus flare and polar-cap proton absorption
+        computed the way NOAA's D-RAP model does, from the live GOES X-ray and proton flux with
+        their angular and frequency laws (the proton part only matters poleward of the auroral
+        zone). The
         geomagnetic gate lowers the MUF by 5% for each Kp point above 3 and applies a direct
         penalty scaled to your latitude, weighted toward the high bands. The season gate trims
         the low bands for summer static. Treat the 6&nbsp;m figure as a floor rather than a

@@ -157,8 +157,80 @@ test('localizeSondeMUF bends a borrowed reading toward the local sun', () => {
   assert.ok(up <= 20 * 1.5 && down >= 20 * 0.65, 'the clamp holds');
 });
 
+test('absorption follows D-RAP: night zero, HAF formula, angular taper', () => {
+  const QUIET = 4e-7, X1 = 1e-4;
+  // Night: no D layer, no absorption, whatever the sun is doing in X-rays.
+  assert.strictEqual(api.absorptionDb(7.1, -10, X1), 0);
+  assert.strictEqual(api.estimateLUF(-10, X1), 0);
+  // D-RAP's flare term at the subsolar point: HAF = 10*log10(flux) + 65,
+  // and by definition the absorption there is 1 dB. At X1 that is 25 MHz;
+  // the quiet term at 25 MHz adds ~0.17 dB.
+  const haf = 10 * Math.log10(X1) + 65;
+  const at = api.absorptionDb(haf, 89.9, X1);
+  assert.ok(Math.abs(at - 1 - 108.6 / (haf * haf)) < 0.01, `1 dB at HAF, got ${at}`);
+  // Their degradation law: an octave below the HAF costs 2^1.5 times more.
+  const flareOnly = f => api.absorptionDb(f, 89.9, X1) - api.absorptionDb(f, 89.9, 1e-9);
+  assert.ok(Math.abs(flareOnly(haf / 2) / flareOnly(haf) - Math.pow(2, 1.5)) < 0.01);
+  // Their angular law: the quiet LUF tapers as sin(el)^0.75.
+  const ratio = api.estimateLUF(30, 1e-9) / api.estimateLUF(89.9, 1e-9);
+  assert.ok(Math.abs(ratio - Math.pow(Math.sin(Math.PI / 6), 0.75)) < 0.01, `taper ${ratio}`);
+  // Quiet anchor survives the rewrite: overhead sun alone puts the LUF
+  // near 4.56 MHz, and a flare only ever raises it.
+  assert.ok(Math.abs(api.estimateLUF(89.9, 1e-9) - 4.56) < 0.02);
+  assert.ok(api.estimateLUF(60, X1) > api.estimateLUF(60, QUIET));
+  assert.ok(api.estimateLUF(60, 1e-3) > api.estimateLUF(60, X1), 'monotonic in flux');
+  // The scores feel it: an X1 flare costs 20m real ground by day.
+  const quietCtx = { muf: 25, kp: 0, sunEl: 60, lat: 40, xrayFlux: QUIET };
+  const flareCtx = { ...quietCtx, xrayFlux: X1 };
+  assert.ok(api.scoreBand(b20, flareCtx).score < api.scoreBand(b20, quietCtx).score - 10);
+});
+
+test('D-RAP polar proton term: cap only, day and night laws, Kp widening', () => {
+  const P = { day: 1000, night: 400 };
+  const cap = { gmLat: 75, kp: 0, protons: P };
+  // Deep in the cap by day: 0.115 * sqrt(1000) dB at 30 MHz, on top of
+  // a small quiet term.
+  const quiet30 = api.absorptionDb(30, 45, 1e-9, null);
+  const day30 = api.absorptionDb(30, 45, 1e-9, cap);
+  assert.ok(Math.abs(day30 - quiet30 - 0.115 * Math.sqrt(1000)) < 0.01, `day ${day30}`);
+  // Deep in the cap by night: 0.020 * sqrt(400) dB, nothing else.
+  const night30 = api.absorptionDb(30, -30, 1e-9, cap);
+  assert.ok(Math.abs(night30 - 0.020 * Math.sqrt(400)) < 1e-9, `night ${night30}`);
+  // Same (f0/f)^1.5 law as the rest of D-RAP.
+  const night15 = api.absorptionDb(15, -30, 1e-9, cap);
+  assert.ok(Math.abs(night15 / night30 - Math.pow(2, 1.5)) < 0.01);
+  // Midlatitudes never feel it: FN30 sits near 51 degrees geomagnetic.
+  const fn30 = { gmLat: api.geomagLat(40.5, -73), kp: 0, protons: P };
+  assert.ok(Math.abs(fn30.gmLat - 51) < 3, `FN30 gmLat ${fn30.gmLat}`);
+  assert.strictEqual(api.absorptionDb(30, -30, 1e-9, fn30), 0);
+  // A storm drags the cap edge equatorward: 58 degrees is outside the
+  // quiet cap but inside it at Kp 6.
+  const edge = { gmLat: 58, kp: 0, protons: P };
+  assert.strictEqual(api.absorptionDb(30, -30, 1e-9, edge), 0);
+  assert.ok(api.absorptionDb(30, -30, 1e-9, { ...edge, kp: 6 }) > 0);
+  // A proton event gives the polar cap a nighttime LUF.
+  const luf = api.estimateLUF(-30, 1e-9, cap);
+  assert.ok(luf > 4 && luf < 7, `polar night LUF ${luf}`);
+});
+
+test('fetchProtons interpolates the night energy from GOES channels', async () => {
+  const { api, sandbox } = load();
+  sandbox.fetch = async () => ({
+    ok: true,
+    json: async () => [
+      { energy: '>=1 MeV', flux: 100 },
+      { energy: '>=5 MeV', flux: 20 },
+      { energy: '>=10 MeV', flux: 5 },
+    ],
+  });
+  const p = await api.fetchProtons();
+  assert.strictEqual(p.day, 20, 'day rides the 5 MeV channel');
+  // J(E) = 100 * E^-1 here, so J(>2.2) should come out near 45.
+  assert.ok(Math.abs(p.night - 100 / 2.2) < 0.1, `night ${p.night}`);
+});
+
 test('scoreBand stays within 0..100 and gates multiply', () => {
-  const ctx = { muf: 20, kp: 2, sunEl: 30, lat: 40.5, lon: -74, flareMult: 1 };
+  const ctx = { muf: 20, kp: 2, sunEl: 30, lat: 40.5, lon: -74, xrayFlux: 4e-7 };
   for (const b of api.BANDS) {
     const s = api.scoreBand(b, ctx);
     assert.ok(s.score >= 0 && s.score <= 100, `${b.nm}: ${s.score}`);

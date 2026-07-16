@@ -55,7 +55,8 @@ function load(opts = {}) {
     this.__api = {
       parseGrid, latLonToGrid, sunElevation, kmBetween, neighborGrids,
       nextSunCrossings, bandRangeList, ledeHTML,
-      bandFromHz, estimateMUF, estimateLUF, scoreBand, verdict,
+      bandFromHz, estimateMUF, estimateLUF, absorptionDb, geomagLat,
+      fetchProtons, scoreBand, verdict,
       parseFeedTime, fetchKp, fetchIonosonde, localizeSondeMUF,
       nthFullWeekendSat, activeContest, activityFactor,
       liveScore, liveStats, addSpot, pruneSpots, renderBands,

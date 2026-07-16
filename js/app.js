@@ -175,27 +175,32 @@ async function refresh() {
     posTile + sunTile;
   $('bands').innerHTML = '';
 
-  const [sfiR, kpR, xrR, ionR] = await Promise.allSettled([
-    fetchSFI(), fetchKp(), fetchXray(), fetchIonosonde(pos)
+  const [sfiR, kpR, xrR, ionR, prR] = await Promise.allSettled([
+    fetchSFI(), fetchKp(), fetchXray(), fetchIonosonde(pos), fetchProtons()
   ]);
 
   // Treat "fulfilled but not a finite number" the same as a failed fetch,
   // so one malformed field can never spoil the whole model.
   const sfiOk = sfiR.status === 'fulfilled' && Number.isFinite(sfiR.value);
   const kpOk  = kpR.status  === 'fulfilled' && Number.isFinite(kpR.value);
-  const xrOk  = xrR.status  === 'fulfilled' && Number.isFinite(xrR.value?.mult);
+  const xrOk  = xrR.status  === 'fulfilled' && Number.isFinite(xrR.value?.flux) && xrR.value.flux > 0;
   const ionOk = ionR.status === 'fulfilled' && Number.isFinite(ionR.value?.muf)
              && Number.isFinite(ionR.value?.fof2);
 
   const sfi = sfiOk ? sfiR.value : 120;
   const kp  = kpOk  ? kpR.value  : 2;
-  const xr  = xrOk  ? xrR.value  : { cls: '?', mult: 1 };
+  const xr  = xrOk  ? xrR.value  : { cls: '?', flux: 1e-7 };
   const ion = ionOk ? ionR.value : null;
+  // Quiet is assumed when the proton feed is unreachable: the polar
+  // term simply drops out, exactly like the pre-proton model.
+  const protons = prR.status === 'fulfilled' && Number.isFinite(prR.value?.day)
+    ? prR.value : null;
 
   let muf = ion ? localizeSondeMUF(ion.muf, sfi, kp, now, pos, ion)
                 : estimateMUF(sfi, sunEl, kp, pos.lat, now);
   if (!Number.isFinite(muf) || muf <= 0) muf = estimateMUF(120, sunEl, 2, pos.lat, now);
-  const luf = estimateLUF(sunEl, xr.mult);
+  const luf = estimateLUF(sunEl, xr.flux, protons
+    ? { gmLat: geomagLat(pos.lat, pos.lon), kp, protons } : null);
 
   const tiles = [
     fieldTile('SFI', sfi, 'sfu',
@@ -231,8 +236,8 @@ async function refresh() {
     msg.classList.add('show');
   }
 
-  lastCtx = { muf, kp, sunEl, lat: pos.lat, lon: pos.lon, flareMult: xr.mult,
-              sunRise: sun.rise, sunSet: sun.set };
+  lastCtx = { muf, kp, sunEl, lat: pos.lat, lon: pos.lon, xrayFlux: xr.flux,
+              protons, sunRise: sun.rise, sunSet: sun.set };
   renderBands(lastCtx);
   connectLive(pos);
 }
