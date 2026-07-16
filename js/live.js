@@ -20,6 +20,12 @@ try { lastQsl = +localStorage.getItem('hopQslAt') || 0; } catch (e) {}
 let myGrids = new Set();   // current 4-char square + neighbors, for direction tagging
 let liveSince = 0;         // when the current window started filling (0 = no feed yet)
 let lostAt = 0;            // when an established link dropped (0 = link healthy)
+// Receptions of the operator's own signal, kept apart from the scoring
+// window so the heard line can answer "was I heard" even for spots the
+// window rejects as ground wave. mqttCall is the callsign the live feed
+// is filtered by; ownHeard rows are { t, band, rx, km }.
+let mqttCall = '';
+let ownHeard = [];
 
 // Bare wss on 1886 is the confirmed-working endpoint (sometimes slow to
 // answer, hence the generous timeout), so it leads. wss works from https and
@@ -33,6 +39,7 @@ let goodUrl = null, cascadeActive = false;
 function pruneSpots() {
   const cut = Date.now() - LIVE_WINDOW;
   spots = spots.filter(s => s.t > cut);
+  ownHeard = ownHeard.filter(o => o.t > cut);
 }
 
 /* ---------- persistence: a reload keeps the spot window ---------- */
@@ -55,6 +62,8 @@ function saveSpots() {
       v: 2, gridKey: mqttGrids, savedAt, liveSince,
       spots: spots.map(s => [Math.round((savedAt - s.t) / 1000), BAND_ORD[s.band],
         s.km, s.md, s.rx ? 1 : 0, s.who, s.tp ? 1 : 0, s.src === 'r' ? 1 : 0]),
+      own: ownHeard.map(o => [Math.round((savedAt - o.t) / 1000), BAND_ORD[o.band],
+        o.rx, o.km]),
     }));
   } catch (e) { /* storage full or unavailable: persistence is a bonus */ }
 }
@@ -84,6 +93,16 @@ function restoreSpots(key) {
     spots.push({ t, band, km: r[2], md: String(r[3] || ''), rx: !!r[4],
                  who: String(r[5] || ''), tp: !!r[6], src: r[7] ? 'r' : 'm' });
   }
+  ownHeard = [];
+  if (Array.isArray(d.own)) {
+    for (const r of d.own) {
+      if (!Array.isArray(r) || !Number.isFinite(r[0])) continue;
+      const band = BANDS[r[1]] ? BANDS[r[1]].nm : '';
+      const t = d.savedAt - r[0] * 1000;
+      if (!band || t <= cut) continue;
+      ownHeard.push({ t, band, rx: String(r[2] || ''), km: r[3] });
+    }
+  }
   if (d.liveSince) {
     const covered = Math.min(Math.max(0, d.savedAt - d.liveSince), LIVE_WINDOW - gap);
     liveSince = now - covered;
@@ -103,6 +122,14 @@ function addSpot(band, gridA, gridB, mode, heardMs, txCall, rxCall, src) {
   // Whole kilometers: the grid centers already carry a square of slack,
   // and the persisted rows should not spend fifteen digits per distance.
   const km = Math.round(kmBetween(a, b)), md = mode || '';
+  // A reception of the operator's own signal feeds the heard line before
+  // any scoring filter runs: a skimmer next door says nothing about the
+  // sky, but it is still an answer to "was I heard". The broker can
+  // deliver one copy per matching subscription when the callsign and
+  // grid filters overlap, hence the exact-match guard.
+  if (mqttCall && rxCall && String(txCall || '').toUpperCase() === mqttCall &&
+      !ownHeard.some(o => o.t === t && o.band === band && o.rx === rxCall))
+    ownHeard.push({ t, band, rx: rxCall, km });
   // A signal that never touched the ionosphere says nothing about the
   // bands: anything inside the band's ground-wave radius is dropped.
   // Except on 6m, where the stretch between line of sight and the Es
@@ -191,6 +218,24 @@ function subscribeGrids(c, grids) {
   }
 }
 
+const callTopic = call => `pskr/filter/v2/+/+/${call}/+/+/+/+/+`;
+
+function setCall(call) {
+  // Follows the callsign field: the live feed is additionally filtered
+  // by the operator's own call as sender, so reports of their signal
+  // arrive as they happen whether or not the retrieval API answers.
+  // Rides the existing connection as one extra topic; touches nothing
+  // else, and a disconnected client just picks the topic up on connect.
+  call = String(call || '').trim().toUpperCase();
+  if (call === mqttCall) return;
+  const c = mqttClient;
+  if (c && c.connected) {
+    if (mqttCall) { try { c.unsubscribe(callTopic(mqttCall)); } catch (e) {} }
+    if (call) { try { c.subscribe(callTopic(call)); } catch (e) {} }
+  }
+  mqttCall = call;
+}
+
 function handleSpot(topic, payload) {
   try {
     const m = JSON.parse(payload.toString());
@@ -206,7 +251,7 @@ function connectLive(pos) {
   myGrids = new Set(grids);   // before any bail-out: retrieval spots need it too
   const key = grids.join(',');
   if (key === mqttGrids && mqttClient && (mqttClient.connected || cascadeActive)) return;
-  if (mqttClient) { try { mqttClient.end(true); } catch (e) {} mqttClient = null; spots = []; liveSince = 0; lostAt = 0; }
+  if (mqttClient) { try { mqttClient.end(true); } catch (e) {} mqttClient = null; spots = []; ownHeard = []; liveSince = 0; lostAt = 0; }
   mqttGrids = key;
   restoreSpots(key);   // before the mqtt bail-out: a broker-less page still keeps its window
   if (!window.mqtt) {
@@ -259,6 +304,7 @@ function attemptConnect(urls, grids, round = 1) {
     setLiveState(`live: ${grids[0]} + ${grids.length - 1} neighbors via ${url.split('//')[1]}`, 'ok');
     $('qslNote').textContent = '';
     subscribeGrids(c, grids);
+    if (mqttCall) c.subscribe(callTopic(mqttCall));
   });
   c.on('message', handleSpot);
   const fail = () => {

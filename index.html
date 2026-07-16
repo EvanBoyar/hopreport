@@ -432,6 +432,7 @@
       <input id="mycall" placeholder="MYCALL" maxlength="12" spellcheck="false" autocomplete="off" aria-label="Your callsign">
       <button id="qsl" class="ghost">Where was I heard?</button>
       <span id="qslNote" class="note"></span>
+      <span id="heardNote" class="note"></span>
     </div>
 
     <details class="notes">
@@ -523,7 +524,10 @@
         ones. The
         callsign query folds your own reception reports in through the retrieval API, limited
         to one query every five minutes under PSK Reporter's rules; once a callsign is
-        entered it is remembered and queried on that cadence automatically. If every source fails at
+        entered it is remembered and queried on that cadence automatically. The live feed is
+        also filtered by that callsign, so stations hearing your signal appear in the heard
+        line as they happen, even while the retrieval API is unreachable; receptions inside
+        the ground-wave radius show there too, though they never enter the scores. If every source fails at
         once, the browser or network is blocking cross-origin requests; grab the project
         folder and open index.html locally.
       </p>
