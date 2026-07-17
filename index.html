@@ -108,6 +108,12 @@
   .mark { display: block; line-height: 0; }
   .mark svg { display: block; }
   .mark:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  /* flex: 1 so the nameplate shares the mark's row at any width: sized
+     to its content it wrapped below the mark as a unit the moment the
+     byline stopped fitting, taking the title with it. Now the title
+     stays put and the byline alone tucks underneath when the row is
+     tight (the titleline wraps from 620px down). */
+  .nameplate { flex: 1; }
   .titleline { display: flex; align-items: center; gap: 9px; }
   /* The title fills the mark's height on its own: the dateline under it
      is flags only (greyline, contest weekend) and is usually absent.
@@ -337,29 +343,51 @@
 
   @media (max-width: 620px) {
     .inner { padding: 14px 14px 18px; }
-    /* Tighter masthead: mark and title share a row so the lede and more
-       of the log land above the fold. */
+    /* Tighter masthead: the whole nameplate — mark, title, byline,
+       switch — holds a single ~30px row so the lede and more of the
+       log land above the fold. 20px is the largest title that fits
+       that row on a 360px phone: mark 30 + gap 10 + title 169 + gap 9
+       + byline 42 + switch 38 + clearance just squeezes into the 304px
+       of content. */
     header { gap: 6px 10px; }
     .mark svg { width: 30px; height: 30px; }
-    h1 { font-size: 22px; }
+    h1 { font-size: 20px; }
     .dateline { font-size: 11px; }
     .lede { font-size: 12.5px; }
     .band { grid-template-columns: 50px 1fr 76px; gap: 10px; }
     .band .nm { font-size: 16px; }
     .band .fq { font-size: 9px; letter-spacing: 0; white-space: nowrap; }
     .stamp { font-size: 10px; letter-spacing: 0.13em; padding: 2px 6px 1px 8px; }
-    /* The grid row must fit beside the checkboxes on a 360px phone, so
-       everything slims down. */
-    .gridform { gap: 8px; }
-    #grid { width: 84px; font-size: 17px; }
-    .gridform .srcbox { margin-left: 0; gap: 8px; }
-    .cwbox { gap: 4px; }
-    button { padding: 7px 10px; }
-    /* The title keeps clear of the switch's corner. On the narrowest
-       phones the whole nameplate wraps below the mark, which leaves the
-       mark and switch balancing the first row; the byline wrapping
-       under the title is the last resort below ~355px. */
-    .titleline { padding-right: 44px; flex-wrap: wrap; row-gap: 1px; }
+    /* The locator, Update, and the three source switches share one row
+       on a phone. Measured: input 72 + Update 66 + digi/CW/model 150 +
+       two 6px gaps = 300, inside the 304px a 360px phone offers — so
+       the row holds from ~356px up and wraps only below that. */
+    .gridform { gap: 6px; }
+    #grid { width: 72px; font-size: 16px; }
+    .gridform .srcbox { margin-left: 0; gap: 6px; }
+    .cwbox { gap: 3px; }
+    .cwbox input { width: 13px; height: 13px; }
+    button { padding: 6px 8px; }
+    /* The title keeps clear of the switch's corner: the switch slims to
+       38px on phones (orb travel shrinks with it) and the titleline
+       reserves the corner's footprint. With the measured widths above
+       and the tightened gap, the byline sits beside the title about
+       6px clear of the switch down to a ~354px viewport and tucks
+       underneath on anything narrower (the tuck costs the row ~13px
+       of height); the title itself stays on the mark's row to below
+       310px. */
+    .themebtn { width: 38px; }
+    :root[data-theme="dark"] .themebtn .orb { transform: translateX(16px); }
+    .titleline { gap: 1px 6px; padding-right: 38px; flex-wrap: wrap; }
+  }
+  /* The byline stays beside the title all the way down: each step is
+     the largest title that still leaves the byline room on the mark's
+     row (18px carries to ~335px of viewport, 16px to ~317px). */
+  @media (max-width: 355px) {
+    h1 { font-size: 18px; }
+  }
+  @media (max-width: 335px) {
+    h1 { font-size: 16px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .fill { transition: none; }
@@ -398,7 +426,7 @@
           <rect width="64" height="64" rx="10" fill="none" stroke="var(--card-edge)" stroke-width="2"/>
         </svg>
       </a>
-      <div>
+      <div class="nameplate">
         <div class="titleline">
           <h1>The Hop Report</h1>
           <a class="byline" href="https://www.qrz.com/db/NR8E">by NR8E</a>
