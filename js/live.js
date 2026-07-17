@@ -203,6 +203,13 @@ function windowFill() {
   return liveSince ? Math.min(1, (Date.now() - liveSince) / LIVE_WINDOW) : 1;
 }
 
+function windowObserved() {
+  // Like windowFill, but honest about absence: with no feed connected the
+  // window was never actually watched, and its silence must count for
+  // nothing — a dead broker cannot be allowed to read as a dead band.
+  return liveSince ? Math.min(1, (Date.now() - liveSince) / LIVE_WINDOW) : 0;
+}
+
 function setLiveState(txt, cls) {
   const el = $('mqttState');
   el.textContent = txt;

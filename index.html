@@ -530,7 +530,12 @@
         Reporter ingests the Reverse Beacon Network's skimmer spots. The count switches above
         the log choose what feeds each score: digital spots, CW spots, and the computed
         model can be mixed freely, and with the model excluded a band shows no verdict until
-        it collects three live spots. The feed skews toward FT8 monitors, so a
+        it collects three live spots &mdash; with one exception: when the window has been
+        watched, the baseline says the neighborhood should be busy, and the band still
+        produced almost nothing, that silence is itself evidence, and the band can read
+        CLOSED on it. The conviction only ever points toward closure (a lone long-haul
+        spot keeps the band at <i>sparse</i>, never opens it), and an unwatched window
+        &mdash; feed down, page just opened &mdash; convicts nothing. The feed skews toward FT8 monitors, so a
         band that is lively on SSB but quiet on digital and CW can still read low. The
         Raw spot volume mostly measures how many operators live nearby, so a scheduled
         collector samples the whole feed on quiet days (flares, storms, and contest

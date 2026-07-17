@@ -67,13 +67,23 @@ function renderBands(ctx) {
   // the live share of the blend ramps up with coverage (full weight from
   // 15 minutes on) so thin extrapolations do not get a full vote.
   const fill = windowFill();
+  const obs = windowObserved();
   const liveW = 0.6 * Math.min(1, fill / 0.5);
   const summary = [];
   $('bands').innerHTML = BANDS.map(b => {
     const s = scoreBand(b, ctx);
     const st = liveStats(b.nm, useDigi, useCw, fill);
     const bl = grids ? baselineExpected(baselineData, grids, b.nm) : null;
-    const lv = (useDigi || useCw) ? liveScore(b, st, act, bl ? bl.ref : null) : null;
+    // Expected raw spot count over the actually-watched slice of the
+    // window, for the damning-silence path in liveScore. The baseline
+    // speaks peak-equivalent spots/hour, so multiply back by operator
+    // activity — deliberately the cheapest composition (0.8 undoes
+    // normalizedRate's denominator; tx buckets carry its 0.6 weight), so
+    // the count is understated and silence convicts less, not more.
+    const expWin = bl ? bl.expected * (obs / WINDOWS_PER_HOUR) *
+      Math.min(0.8 * Math.min(act.rxDigi, act.rxCw),
+               (0.8 / 0.6) * Math.min(act.digi, act.cw)) : null;
+    const lv = (useDigi || useCw) ? liveScore(b, st, act, bl ? bl.ref : null, expWin) : null;
     // With the model excluded, a band scores on live spots alone and shows
     // no verdict until it has enough of them.
     const score = useModel
@@ -101,6 +111,10 @@ function renderBands(ctx) {
       const tail = lv != null ? (useModel ? 'blended live' : 'live only')
                               : (useModel ? 'model only' : 'needs 3 spots');
       facts += ` / ${modeBit} ${dirBit}${devBit}, max <b>${Math.round(st.max).toLocaleString()}</b> km, ${tail}`;
+    } else if (lv != null) {
+      // Zero spots can only reach a verdict through the damning-silence
+      // path; say what convicted the band.
+      facts += ` / silent: <b>0</b> spots where ~<b>${Math.round(expWin)}</b> expected`;
     }
     // 6m only: the tropo tally rides along for orientation, never scored.
     if (st.tN) {

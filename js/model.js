@@ -466,7 +466,7 @@ function baselineExpected(data, grids, bandName) {
   return { expected: sum, ref: 40 * Math.min(6, Math.max(0.2, sum / b.ref)) };
 }
 
-function liveScore(band, st, act = null, ref = null) {
+function liveScore(band, st, act = null, ref = null, expWin = null) {
   // Needs a few spots before we trust it, then activity plus reach, normalized
   // per band. 1500 km on 160m is a great night; on 15m it is nothing.
   // Counts arrive coverage-weighted from liveStats (a partial window is
@@ -481,9 +481,28 @@ function liveScore(band, st, act = null, ref = null) {
   // knows the area, else the universal 40: 40 normalized spots/hour at
   // evening peak reads the same as 10 spots did over the old 15 minute
   // window.
-  if (st.n < 3) return null;
   const nEff = normalizedRate(st, act);
   const activity = 1 - Math.exp(-nEff / (ref || 40));
   const reach = Math.min(1, (st.max2 ?? st.max) / (REF_DIST[band.nm] || 5000));
-  return 100 * (0.45 * activity + 0.55 * reach);
+  const score = 100 * (0.45 * activity + 0.55 * reach);
+  if (st.n >= 3) return score;
+  // Under three spots the score is normally withheld, but well-watched
+  // silence where the baseline promised traffic is evidence in its own
+  // right, not the absence of it. expWin is the raw spot count expected
+  // over the watched part of the window (the caller owns that unit
+  // conversion); when the chance of an open band delivering this few
+  // spots is under 1% by Poisson, the trickle is allowed to testify —
+  // and only toward closure.
+  if (expWin == null) return null;
+  let p = Math.exp(-expWin), term = p;
+  for (let k = 1; k <= st.n; k++) { term *= expWin / k; p += term; }
+  if (p >= 0.01) return null;
+  // Even then the conviction must survive the most generous reading of
+  // the crumbs: reach judged on the longest spot, since the usual
+  // second-longest guard has nothing to stand on under three. A lone
+  // long-haul decode is counter-evidence, and the band stays sparse on
+  // it rather than closing on a verdict the spot itself contradicts.
+  const generous = 100 * (0.45 * activity +
+    0.55 * Math.min(1, st.max / (REF_DIST[band.nm] || 5000)));
+  return verdict(Math.round(generous))[0] === 'CLOSED' ? score : null;
 }

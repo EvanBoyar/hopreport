@@ -72,6 +72,37 @@ test('liveScore: 3-spot floor and night spots outranking evening crowds', () => 
   assert.ok(api.liveScore(b20, st, night) > api.liveScore(b20, st, eve));
 });
 
+test('liveScore: damning silence convicts, but only toward closure', () => {
+  const mute = { n: 0, max: 0, max2: 0, cw: 0, dRx: 0, dTx: 0, cRx: 0, cTx: 0 };
+  // No expectation supplied: silence stays an abstention.
+  assert.strictEqual(api.liveScore(b20, mute), null);
+  // A quiet corner (2 expected spots): zero spots is unremarkable.
+  assert.strictEqual(api.liveScore(b20, mute, null, null, 2), null);
+  // A busy neighborhood (12 expected): zero spots is a verdict, and a
+  // low one.
+  const shut = api.liveScore(b20, mute, null, null, 12);
+  assert.ok(shut != null && shut < 12, `expected a CLOSED score, got ${shut}`);
+  // One long-haul decode among the silence: the evidence disagrees with
+  // itself, so the band abstains rather than closing (or opening) on a
+  // single spot.
+  const oneFar = { n: 1, max: 7000, max2: 0, cw: 0, dRx: 1, dTx: 0, cRx: 0, cTx: 0 };
+  assert.strictEqual(api.liveScore(b20, oneFar, null, null, 12), null);
+  // Two short-skip crumbs where dozens were promised: closed.
+  const crumbs = { n: 2, max: 500, max2: 300, cw: 0, dRx: 2, dTx: 0, cRx: 0, cTx: 0,
+                   wdRx: 4, wdTx: 0, wcRx: 0, wcTx: 0 };
+  const s = api.liveScore(b20, crumbs, null, null, 20);
+  assert.ok(s != null && s < 12, `expected a CLOSED score, got ${s}`);
+});
+
+test('windowObserved: a dead feed reads unwatched, not full', () => {
+  const { api } = load();
+  assert.strictEqual(api.liveSince, 0);
+  assert.strictEqual(api.windowFill(), 1, 'fill treats no-feed as covered');
+  assert.strictEqual(api.windowObserved(), 0, 'observed does not');
+  api.liveSince = Date.now() - api.LIVE_WINDOW;
+  assert.strictEqual(api.windowObserved(), 1);
+});
+
 test('reach is judged by the second-longest spot', () => {
   const { api } = load();
   api.myGrids = new Set(['FN30']);

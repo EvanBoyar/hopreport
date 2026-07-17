@@ -61,6 +61,7 @@ function load(opts = {}) {
       nthFullWeekendSat, activeContest, activityFactor,
       liveScore, liveStats, addSpot, pruneSpots, renderBands,
       normalizedRate, baselineExpected, setLiveState, windowFill,
+      windowObserved,
       connectLive, saveSpots, restoreSpots, queryMySpots, setCall,
       BANDS, LIVE_WINDOW, MIN_SKY_KM,
       get lastQsl() { return lastQsl; },
