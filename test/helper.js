@@ -60,6 +60,8 @@ function load(opts = {}) {
       parseFeedTime, fetchKp, fetchIonosonde, localizeSondeMUF,
       nthFullWeekendSat, activeContest, activityFactor,
       liveScore, liveStats, addSpot, pruneSpots, renderBands, refresh,
+      refractivityGradient, tropoModelScore, tropoLiveScore, tropoVerdict,
+      tropoRate, DUCT_GRAD,
       normalizedRate, baselineExpected, setLiveState, windowFill,
       windowObserved,
       connectLive, saveSpots, restoreSpots, queryMySpots, setCall,

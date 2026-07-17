@@ -180,14 +180,24 @@ function liveStats(bandName, useDigi, useCw, fill) {
   // locator cannot swing a band.
   const w = WINDOWS_PER_HOUR / Math.max(1 / 6, Math.min(1, fill ?? 1));
   let n = 0, max = 0, max2 = 0, cw = 0, dRx = 0, dTx = 0, cRx = 0, cTx = 0,
-      wdRx = 0, wdTx = 0, wcRx = 0, wcTx = 0, tN = 0, tMax = 0;
+      wdRx = 0, wdTx = 0, wcRx = 0, wcTx = 0,
+      tN = 0, tMax = 0, tMax2 = 0, wtRx = 0, wtTx = 0;
   for (const x of spots) {
     if (x.band !== bandName) continue;
     const isCw = x.md === 'CW';
     if (isCw ? !useCw : !useDigi) continue;
     // Tropo spots (6m) ride their own tally; they never touch the sky
-    // counts or reach.
-    if (x.tp) { tN++; if (x.km > tMax) tMax = x.km; continue; }
+    // counts or reach, but they carry the same coverage-weighted hourly
+    // rates and second-longest guard so tropoLiveScore can judge them
+    // the way liveScore judges a band.
+    if (x.tp) {
+      tN++;
+      const twx = x.src === 'r' ? WINDOWS_PER_HOUR : w;
+      if (x.rx) wtRx += twx; else wtTx += twx;
+      if (x.km > tMax) { tMax2 = tMax; tMax = x.km; }
+      else if (x.km > tMax2) tMax2 = x.km;
+      continue;
+    }
     n++;
     const wx = x.src === 'r' ? WINDOWS_PER_HOUR : w;
     if (isCw) { cw++; if (x.rx) { cRx++; wcRx += wx; } else { cTx++; wcTx += wx; } }
@@ -196,7 +206,8 @@ function liveStats(bandName, useDigi, useCw, fill) {
     if (x.km > max) { max2 = max; max = x.km; }
     else if (x.km > max2) max2 = x.km;
   }
-  return { n, max, max2, cw, dRx, dTx, cRx, cTx, wdRx, wdTx, wcRx, wcTx, tN, tMax };
+  return { n, max, max2, cw, dRx, dTx, cRx, cTx, wdRx, wdTx, wcRx, wcTx,
+           tN, tMax, tMax2, wtRx, wtTx };
 }
 
 function windowFill() {

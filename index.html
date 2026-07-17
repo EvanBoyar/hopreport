@@ -25,6 +25,7 @@
     --blue: #2c5697;
     --green: #2e7c4f;
     --yellowgreen: #5e7c2b;
+    --yellow: #8c7a17;
     --orange: #a8641f;
     --orangered: #b34a24;
     --ochre: #8a6d2f;
@@ -54,6 +55,7 @@
     --blue: #7fa8dc;
     --green: #6fbe8b;
     --yellowgreen: #a6c46e;
+    --yellow: #d3c35c;
     --orange: #d99a55;
     --orangered: #e2825a;
     --ochre: #c9a75c;
@@ -302,6 +304,7 @@
   .s-none { color: var(--faded); }
   .s-open { color: var(--green); }
   .s-good { color: var(--yellowgreen); }
+  .s-yellow { color: var(--yellow); }   /* tropo's ENHANCED at 50-74 */
   .s-fair { color: var(--orange); }
   .s-poor { color: var(--orangered); }
   .s-closed { color: var(--red); }
@@ -498,10 +501,33 @@
         a signal that never touched the ionosphere says nothing about the bands; the
         baseline collector applies the same rule so the two sides stay comparable.
         6&nbsp;m splits its near field instead: under 150&nbsp;km is line of sight and
-        discarded, 150 to 500&nbsp;km is troposphere and appears in the facts line as its
-        own tropo tally (real news on that band, though it says nothing about the
-        ionosphere and never feeds the score), and only spots past the sporadic-E floor
-        of 500&nbsp;km count as sky. The
+        discarded, 150 to 500&nbsp;km is troposphere and rides its own tropo line under
+        the band, and only spots past the sporadic-E floor of 500&nbsp;km count as sky.
+        The tropo line is judged on its own evidence, because tropo is weather, not
+        ionosphere: Open-Meteo's forecast profile over your grid supplies temperature
+        and humidity through the lowest kilometre, and from it the page computes the
+        sharpest vertical radio-refractivity gradient &mdash; about &minus;40 N-units
+        per km in a standard atmosphere, super-refraction from &minus;79, and past
+        &minus;157 a duct, where the ray bends more than the earth curves. That
+        gradient is the line's model term and blends with the live tally exactly the
+        way the bands blend model and spots, the tally judged against expected
+        operator activity with reach across the annulus riding the second-longest
+        spot. The annulus has a population baseline of its own, collected in the same
+        quiet-day windows as the bands' (the near-field spots every other band
+        discards are, on 6&nbsp;m, tallied instead), so once your area is known,
+        ENHANCED means unusual for your neighborhood, not for a universal one. The
+        bands' silence rule applies here too: a watched window in a neighborhood
+        whose baseline promised tropo traffic can read FLAT on the silence alone
+        &mdash; and only FLAT, with a lone far-edge spot making the line abstain
+        rather than convict. DUCTING is the only green stamp on the line; ENHANCED
+        wears yellow-green at 75 and above and yellow below, NORMAL orange, FLAT
+        orange-red. The ladder has its own words &mdash; DUCTING, ENHANCED, NORMAL, FLAT
+        &mdash; because tropo is never closed, only flat, and DUCTING is reserved for
+        gradient evidence: a spot capped at the 500&nbsp;km floor cannot prove a duct,
+        and the strongest tropo overflows into the sky count, where distance cannot
+        tell it from Es. A point profile is also not the whole path, and forecast
+        models smooth the sharp, shallow inversions that make the best ducts, so the
+        gradient under-calls strong events. The
         feed carries no history, so the window fills gradually after the page
         opens; counts are scaled to the filled fraction so bands do not appear to improve
         for half an hour after loading, and the live share of the blend ramps up with coverage.
@@ -572,8 +598,8 @@
 </div>
 
 <script src="js/geo.js?v=5d126995"></script>
-<script src="js/model.js?v=da361f83"></script>
-<script src="js/live.js?v=adadfaa6"></script>
-<script src="js/app.js?v=3d15e03a"></script>
+<script src="js/model.js?v=fd1407a5"></script>
+<script src="js/live.js?v=edd9b221"></script>
+<script src="js/app.js?v=6d0a7055"></script>
 </body>
 </html>

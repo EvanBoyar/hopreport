@@ -164,6 +164,41 @@ async function fetchIonosonde(pos) {
   };
 }
 
+async function fetchRefractivity(pos) {
+  // The tropo line's model term. Tropo is weather, so it comes from a
+  // weather model: Open-Meteo (CORS-open, keyless) serves forecast
+  // temperature, humidity, and geopotential height on pressure levels
+  // for any coordinates. The lower levels ladder through the first
+  // kilometre at roughly 230 m spacing, where surface and low elevated
+  // ducts live; the ladder runs on to 750 hPa so high terrain (Denver
+  // sits above the 900 hPa surface) still gets usable levels. A grid
+  // above ~2.5 km outruns the ladder entirely and falls back to the
+  // tally, which is the honest answer there anyway. Only the current
+  // hour is asked for.
+  const LEVELS = [1000, 975, 950, 925, 900, 850, 800, 750];
+  const vars = LEVELS.flatMap(p => [`temperature_${p}hPa`,
+    `relative_humidity_${p}hPa`, `geopotential_height_${p}hPa`]);
+  const d = await getJSON('https://api.open-meteo.com/v1/forecast' +
+    `?latitude=${pos.lat.toFixed(3)}&longitude=${pos.lon.toFixed(3)}` +
+    `&hourly=${vars.join(',')}&forecast_hours=1&timeformat=unixtime`);
+  const prof = [];
+  for (const p of LEVELS) {
+    const t = +d.hourly[`temperature_${p}hPa`]?.[0];
+    const rh = +d.hourly[`relative_humidity_${p}hPa`]?.[0];
+    const z = +d.hourly[`geopotential_height_${p}hPa`]?.[0];
+    // A level under the model's own ground (1000 hPa at Denver) is an
+    // extrapolation into rock and says nothing about the air; one much
+    // past 2 km above it describes weather a ground station's tropo
+    // paths never touch.
+    const elev = +d.elevation || 0;
+    if (Number.isFinite(t) && Number.isFinite(rh) && Number.isFinite(z) &&
+        z > elev && z <= elev + 2000) prof.push({ p, t, rh, z });
+  }
+  const g = refractivityGradient(prof);
+  if (!g) throw new Error('no usable profile');
+  return g;
+}
+
 /* ---------- model ---------- */
 
 function estimateMUF(sfi, sunEl, kp, lat = 0, date = new Date()) {
@@ -333,6 +368,101 @@ function verdict(score) {
   return ['CLOSED', 's-closed'];
 }
 
+/* ---------- 6m tropo ---------- */
+
+function refractivityGradient(profile) {
+  // Radio refractivity N = 77.6 P/T + 3.73e5 e/T^2 (P and vapor
+  // pressure e in hPa, T in kelvin), e from the Magnus formula. The
+  // steepest fall between adjacent levels is the duct indicator, not
+  // the top-to-bottom mean: ducting layers are shallow, and a deep
+  // average washes out exactly the inversion being looked for. Returns
+  // N-units per km (about -40 in a standard atmosphere) with the height
+  // of the layer's base, or null with fewer than two usable levels.
+  const pts = profile.map(l => {
+    const T = l.t + 273.15;
+    const e = (l.rh / 100) * 6.112 * Math.exp(17.62 * l.t / (243.12 + l.t));
+    return { z: l.z, n: 77.6 * l.p / T + 3.73e5 * e / (T * T) };
+  }).sort((a, b) => a.z - b.z);
+  let best = null;
+  for (let i = 1; i < pts.length; i++) {
+    const dz = (pts[i].z - pts[i - 1].z) / 1000;
+    if (dz < 0.05) continue;
+    const grad = (pts[i].n - pts[i - 1].n) / dz;
+    if (!best || grad < best.grad) best = { grad, z: Math.round(pts[i - 1].z) };
+  }
+  return best;
+}
+
+// Past -157 N/km a ray bends more than the earth curves and follows it:
+// a duct. Super-refraction starts near -79; standard atmosphere ~ -40.
+const DUCT_GRAD = -157;
+
+function tropoModelScore(grad) {
+  // The gradient mapped onto the verdict ladder at its physical rungs:
+  // the standard atmosphere (-40 N/km) is mid-NORMAL — the everyday is
+  // normal, not a deficit — sub-refraction falls off into FLAT, the
+  // super-refraction onset (-79) lands exactly on the ENHANCED line,
+  // and the ducting threshold on the 75 line, running on to 100 for
+  // deep ducts.
+  const PTS = [[0, 0], [-40, 35], [-79, 50], [DUCT_GRAD, 75], [-235, 100]];
+  if (grad >= 0) return 0;
+  for (let i = 1; i < PTS.length; i++) {
+    const [g1, s1] = PTS[i - 1], [g2, s2] = PTS[i];
+    if (grad >= g2) return s1 + (s2 - s1) * (grad - g1) / (g2 - g1);
+  }
+  return 100;
+}
+
+// The annulus reads fully busy near 20 normalized spots/hour when no
+// baseline knows the area — the universal fallback, the tropo twin of
+// the bands' 40, and a documented estimate.
+const TROPO_REF = 20;
+
+function tropoRate(st, act = null) {
+  // The annulus tally, fed to normalizedRate the way it reads a band:
+  // the tropo counts ride the digi buckets (the tally is FT8-dominated,
+  // so the digi curves normalize both modes) and the CW buckets ride
+  // empty.
+  return normalizedRate({ wdRx: st.wtRx, wdTx: st.wtTx, wcRx: 0, wcTx: 0 }, act);
+}
+
+function tropoLiveScore(st, act = null, ref = null, expWin = null) {
+  // The live half of the tropo verdict, shaped like liveScore: rate
+  // against expected operator activity plus reach across the 150-500 km
+  // annulus, reach judged by the second-longest spot so one mangled
+  // locator cannot call an opening. The denominator is the population-
+  // scaled reference when the baseline knows the annulus, else the
+  // universal TROPO_REF.
+  const activity = 1 - Math.exp(-tropoRate(st, act) / (ref || TROPO_REF));
+  const reachOf = km => Math.min(1, Math.max(0,
+    (km - LOS_KM) / (MIN_SKY_KM['6m'] - LOS_KM)));
+  const score = 100 * (0.45 * activity + 0.55 * reachOf(st.tMax2));
+  if (st.tN >= 3) return score;
+  // Damning silence, annulus edition: a watched window in a neighborhood
+  // whose tropo baseline promised traffic, and almost nothing came. The
+  // shared silence gate and the same generous-reading guard as
+  // liveScore, with the tropo ladder's floor standing in for CLOSED:
+  // silence only ever testifies toward FLAT, and a lone far-edge spot
+  // that contradicts the silence makes the line abstain instead.
+  if (!silenceConvicts(st.tN, expWin)) return null;
+  const generous = 100 * (0.45 * activity + 0.55 * reachOf(st.tMax));
+  return tropoVerdict(Math.round(generous), false)[0] === 'FLAT' ? score : null;
+}
+
+function tropoVerdict(score, duct) {
+  // Tropo is never closed, only flat — even a standard atmosphere
+  // carries weak-signal work across everyday annulus ranges, so the
+  // floor claims "nothing beyond the ordinary", not "unworkable" — and
+  // the ladder has its own words and its own rungs. DUCTING needs
+  // gradient evidence (a spot capped at the 500 km Es floor cannot
+  // prove a duct) and is the only green on the line: spots alone top
+  // out at ENHANCED in yellow-green.
+  if (score >= 75) return duct ? ['DUCTING', 's-open'] : ['ENHANCED', 's-good'];
+  if (score >= 50) return ['ENHANCED', 's-yellow'];
+  if (score >= 30) return ['NORMAL', 's-fair'];
+  return ['FLAT', 's-poor'];
+}
+
 // Spot volume tracks who is awake and keying up, not just the ionosphere:
 // the reporting networks bottom out in the small hours of local night and
 // peak in the evening, and weekends run hotter (contests live there). The
@@ -450,10 +580,12 @@ function normalizedRate(st, act) {
 const BASELINE_URL =
   'https://raw.githubusercontent.com/EvanBoyar/hopreport/data/baseline.json';
 
-function baselineExpected(data, grids, bandName) {
+function baselineExpected(data, grids, bandName, scale = 40) {
   // Expected peak-equivalent spots/hour for this 9-square neighborhood
   // plus the scoring denominator, or null when the baseline has nothing
-  // useful to say about the area.
+  // useful to say about the area. scale is the universal reference the
+  // population ratio multiplies: 40 for the bands, TROPO_REF for the
+  // 6m annulus.
   const b = data && data.bands && data.bands[bandName];
   if (!b || !b.ref || !b.squares) return null;
   let sum = 0, hits = 0;
@@ -463,7 +595,18 @@ function baselineExpected(data, grids, bandName) {
   }
   if (!hits || sum <= 0) return null;
   // Clamped so a degenerate baseline can never pin a band open or shut.
-  return { expected: sum, ref: 40 * Math.min(6, Math.max(0.2, sum / b.ref)) };
+  return { expected: sum, ref: scale * Math.min(6, Math.max(0.2, sum / b.ref)) };
+}
+
+function silenceConvicts(n, expWin) {
+  // The damning-silence gate, shared by the bands and the tropo line:
+  // with expWin raw spots promised over the watched window, is seeing
+  // only n of them a sub-1% Poisson accident? expWin == null means
+  // nothing was promised, and nothing convicts.
+  if (expWin == null) return false;
+  let p = Math.exp(-expWin), term = p;
+  for (let k = 1; k <= n; k++) { term *= expWin / k; p += term; }
+  return p < 0.01;
 }
 
 function liveScore(band, st, act = null, ref = null, expWin = null) {
@@ -490,13 +633,9 @@ function liveScore(band, st, act = null, ref = null, expWin = null) {
   // silence where the baseline promised traffic is evidence in its own
   // right, not the absence of it. expWin is the raw spot count expected
   // over the watched part of the window (the caller owns that unit
-  // conversion); when the chance of an open band delivering this few
-  // spots is under 1% by Poisson, the trickle is allowed to testify —
-  // and only toward closure.
-  if (expWin == null) return null;
-  let p = Math.exp(-expWin), term = p;
-  for (let k = 1; k <= st.n; k++) { term *= expWin / k; p += term; }
-  if (p >= 0.01) return null;
+  // conversion); when the silence gate finds the trickle inexplicable,
+  // it is allowed to testify — and only toward closure.
+  if (!silenceConvicts(st.n, expWin)) return null;
   // Even then the conviction must survive the most generous reading of
   // the crumbs: reach judged on the longest spot, since the usual
   // second-longest guard has nothing to stand on under three. A lone

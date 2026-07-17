@@ -267,3 +267,86 @@ test('scoreBand stays within 0..100 and gates multiply', () => {
     assert.ok(s.score >= 0 && s.score <= 100, `${b.nm}: ${s.score}`);
   }
 });
+
+test('refractivityGradient: Magnus N, steepest adjacent layer, duct call', () => {
+  // Cool moist air under warm dry air: the classic ducting inversion.
+  const duct = api.refractivityGradient([
+    { p: 1000, t: 18, rh: 95, z: 100 },
+    { p: 950,  t: 26, rh: 10, z: 500 },
+  ]);
+  assert.ok(duct.grad < api.DUCT_GRAD, `duct-grade gradient, got ${duct.grad}`);
+  assert.strictEqual(duct.z, 100, 'reports the layer base');
+  // A bland profile reads near the standard -40 N/km, never a duct.
+  const std = api.refractivityGradient([
+    { p: 1000, t: 20, rh: 50, z: 100 },
+    { p: 925,  t: 15, rh: 50, z: 800 },
+  ]);
+  assert.ok(std.grad < 0 && std.grad > -80, `standard-ish, got ${std.grad}`);
+  // Three levels: the sharp low layer must win over the bland one above,
+  // where a top-to-bottom mean would wash it out.
+  const layered = api.refractivityGradient([
+    { p: 1000, t: 18, rh: 95, z: 100 },
+    { p: 950,  t: 26, rh: 10, z: 500 },
+    { p: 900,  t: 24, rh: 30, z: 1050 },
+  ]);
+  assert.strictEqual(layered.z, 100, 'the inversion layer wins');
+  assert.ok(layered.grad < api.DUCT_GRAD);
+  assert.strictEqual(api.refractivityGradient([{ p: 1000, t: 20, rh: 50, z: 100 }]),
+    null, 'one level says nothing');
+});
+
+test('tropoModelScore lands the physical rungs on the verdict ladder', () => {
+  assert.strictEqual(api.tropoModelScore(-40), 35, 'standard atmosphere is NORMAL');
+  assert.ok(api.tropoModelScore(-17) < 30, 'sub-refraction is FLAT');
+  assert.strictEqual(api.tropoModelScore(10), 0, 'clamps above zero gradient');
+  assert.strictEqual(api.tropoModelScore(-79), 50, 'super-refraction onset is ENHANCED');
+  assert.strictEqual(api.tropoModelScore(api.DUCT_GRAD), 75, 'duct threshold hits the 75 line');
+  assert.strictEqual(api.tropoModelScore(-235), 100, 'deep duct tops out');
+  assert.strictEqual(api.tropoModelScore(-400), 100, 'clamps below');
+});
+
+test('tropoLiveScore: three-spot gate, rate and reach, mangled-locator guard', () => {
+  assert.strictEqual(api.tropoLiveScore({ tN: 2, wtRx: 99, wtTx: 0, tMax2: 499 }),
+    null, 'under three spots no verdict');
+  const hot = api.tropoLiveScore({ tN: 20, wtRx: 40, wtTx: 0, tMax2: 490 });
+  assert.ok(hot > 85, `busy far-edge annulus scores high, got ${hot}`);
+  const near = api.tropoLiveScore({ tN: 3, wtRx: 2, wtTx: 0, tMax2: 160 });
+  assert.ok(near < 15, `a trickle of close-in spots scores low, got ${near}`);
+  // Reach rides the second-longest spot: tMax plays no part.
+  const guarded = api.tropoLiveScore({ tN: 3, wtRx: 2, wtTx: 0, tMax2: 160, tMax: 499 });
+  assert.strictEqual(guarded, near);
+  // A populous annulus demands more, a sparse one less, like the bands.
+  const st = { tN: 10, wtRx: 15, wtTx: 0, tMax2: 400 };
+  const city = api.tropoLiveScore(st, null, 80);
+  const plain = api.tropoLiveScore(st, null, null);
+  const rural = api.tropoLiveScore(st, null, 4);
+  assert.ok(city < plain && plain < rural,
+    `city ${Math.round(city)} < plain ${Math.round(plain)} < rural ${Math.round(rural)}`);
+});
+
+test('tropoVerdict: own ladder, DUCTING the only green, gated on gradient', () => {
+  assert.deepStrictEqual([...api.tropoVerdict(80, true)], ['DUCTING', 's-open']);
+  assert.deepStrictEqual([...api.tropoVerdict(80, false)], ['ENHANCED', 's-good'],
+    'spots alone top out at ENHANCED in yellow-green, never green');
+  assert.deepStrictEqual([...api.tropoVerdict(55, false)], ['ENHANCED', 's-yellow']);
+  assert.deepStrictEqual([...api.tropoVerdict(55, true)], ['ENHANCED', 's-yellow'],
+    'a duct aloft cannot lift a quiet band to DUCTING');
+  assert.deepStrictEqual([...api.tropoVerdict(35, false)], ['NORMAL', 's-fair']);
+  assert.deepStrictEqual([...api.tropoVerdict(10, false)], ['FLAT', 's-poor']);
+  for (let s = 0; s <= 100; s++)
+    assert.ok(api.tropoVerdict(s, false)[1] !== 's-open',
+      'no score reaches green without gradient evidence');
+});
+
+test('tropo damning silence: watched, promised, empty reads FLAT, and only FLAT', () => {
+  const mute = { tN: 0, wtRx: 0, wtTx: 0, tMax: 0, tMax2: 0 };
+  assert.strictEqual(api.tropoLiveScore(mute, null, null, null), null,
+    'no baseline expectation, no conviction');
+  assert.strictEqual(api.tropoLiveScore(mute, null, null, 2), null,
+    'a quiet annulus that is plausibly quiet abstains');
+  const shut = api.tropoLiveScore(mute, null, null, 12);
+  assert.ok(shut != null && shut < 30, `expected a FLAT score, got ${shut}`);
+  // A lone far-edge spot contradicts the silence: abstain, never convict.
+  const oneFar = { tN: 1, wtRx: 2, wtTx: 0, tMax: 480, tMax2: 0 };
+  assert.strictEqual(api.tropoLiveScore(oneFar, null, null, 12), null);
+});

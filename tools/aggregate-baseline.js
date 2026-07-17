@@ -39,7 +39,12 @@ function fold(state, sample) {
   if (sample.skipped) return state;
   const when = new Date(sample.t);
   for (const [band, data] of Object.entries(sample.bands)) {
-    if (data.global < MIN_GLOBAL) continue;
+    // The tropo pseudo-band is a distance slice of the 6m window, so its
+    // was-the-feed-healthy gate rides the parent band's count: the
+    // annulus alone may never clear MIN_GLOBAL even on a perfect feed,
+    // and gating it on its own count would starve it forever.
+    const health = band === '6m-tropo' ? (sample.bands['6m'] || data) : data;
+    if (health.global < MIN_GLOBAL) continue;
     const res = state.reservoirs[band] ??= {};
     for (const [sq, [tx, rx]] of Object.entries(data.squares)) {
       const pos = lib.parseGrid(sq);

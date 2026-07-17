@@ -19,6 +19,8 @@ test('baselineExpected sums the neighborhood and scales the reference', () => {
   const dense = api.baselineExpected(
     { bands: { '20m': { ref: 30, squares: { FN30: 900 } } } }, GRIDS, '20m');
   assert.strictEqual(dense.ref, 240);                  // clamped at 6x
+  const tropo = api.baselineExpected(DATA, GRIDS, '20m', 20);
+  assert.strictEqual(tropo.ref, 20, 'scale swaps the universal reference');
 });
 
 test('baselineExpected declines unknown areas and bands', () => {
@@ -83,6 +85,34 @@ test('aggregator publishes medians only after enough samples', () => {
     bands: { '20m': { global: 5000, squares: { FN30: [10, 20] } } },
   }));
   assert.strictEqual(short.bands['20m'], undefined);
+});
+
+test('the tropo pseudo-band folds on its parent band health, not its own', () => {
+  const sample = (t, sixGlobal) => ({
+    t, secs: 75, bands: {
+      '6m':       { global: sixGlobal, squares: { FN30: [5, 5] } },
+      '6m-tropo': { global: 12,        squares: { FN30: [3, 4] } },
+    },
+  });
+  // The annulus never clears MIN_GLOBAL on its own, but the 6m window
+  // was healthy, so the slice is trustworthy and folds.
+  let state = agg.fold({}, sample('2026-07-14T20:00:00Z', 800));
+  assert.strictEqual(state.reservoirs['6m-tropo'].FN30.length, 1,
+    'thin annulus folds while the parent window is healthy');
+  assert.strictEqual(state.reservoirs['6m'].FN30.length, 1,
+    'the parent band folds untouched');
+  // A sick 6m window gates the slice exactly as it gates the band.
+  state = agg.fold(state, sample('2026-07-14T23:00:00Z', 20));
+  assert.strictEqual(state.reservoirs['6m-tropo'].FN30.length, 1,
+    'sick parent window gates the annulus too');
+  const out = agg.publish((() => {
+    let s = {};
+    for (let i = 0; i < agg.MIN_SAMPLES; i++)
+      s = agg.fold(s, sample(`2026-07-${10 + i}T20:00:00Z`, 800));
+    return s;
+  })());
+  assert.ok(out.bands['6m-tropo'].squares.FN30 > 0, 'annulus publishes like a band');
+  assert.ok(out.bands['6m-tropo'].ref > 0, 'with its own reference');
 });
 
 test('a units version bump flushes stale reservoirs', () => {

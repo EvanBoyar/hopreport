@@ -14,8 +14,10 @@ function seeded() {
   return h;
 }
 
-const row = (el, nm) => el('bands').innerHTML.split('<div class="band">')
-  .find(r => r.includes(`>${nm}<`));
+const row = (el, nm) => el('bands').innerHTML.split('<div class="band')
+  .find(r => r.includes(`>${nm}<`) && !r.startsWith(' tropo'));
+const tropoRow = el => el('bands').innerHTML.split('<div class="band')
+  .find(r => r.startsWith(' tropo'));
 
 test('renderBands blends live and model, shows direction split', () => {
   const { api, el } = seeded();
@@ -55,16 +57,104 @@ test('CW annotation disappears when CW spots are excluded', () => {
   assert.match(r, /5<\/b> spots/);
 });
 
-test('6m surfaces tropo spots in the facts without scoring them', () => {
+test('6m tropo rides its own line and scores live-only on the tally', () => {
   const { api, el } = load();
   api.myGrids = new Set(['FN30']);
   const t = Date.now();
   for (let i = 0; i < 3; i++)
     api.addSpot('6m', 'FN30', 'FN33', 'FT8', t - i * 60000 - 1000, 'K' + i, 'W2X');
+  api.renderBands(CTX);   // no refr in ctx: weather term absent
+  const sky = row(el, '6m');
+  assert.doesNotMatch(sky, /tropo/, 'the sky row no longer carries the tally');
+  assert.match(sky, /Es dependent/, 'tropo alone earns no sky verdict');
+  const tr = tropoRow(el);
+  assert.match(tr, /<span class="nm">tropo<\/span>/, 'named like a band');
+  assert.match(tr, /<span class="fq">50\.30 MHz<\/span>/, 'frequency where a band keeps it');
+  assert.match(tr, /<b>3<\/b> spots heard/);
+  assert.match(tr, /max <b>\d+<\/b> km/);
+  assert.match(tr, /live only/);
+  assert.match(tr, /\d+ \/ 100/, 'three spots earn a verdict without weather');
+  assert.match(tr, /FLAT|NORMAL|ENHANCED/, 'a tropo word, never the HF ladder');
+  assert.doesNotMatch(tr, /DUCTING/, 'DUCTING needs gradient evidence');
+});
+
+test('a watched, well-populated annulus reads FLAT on silence alone', () => {
+  const { api, el } = load();
+  api.baselineData = { bands: { '6m-tropo': { ref: 10, squares: { FN30: 60 } } } };
+  api.liveSince = Date.now() - api.LIVE_WINDOW;   // the whole window watched
   api.renderBands(CTX);
-  const r = row(el, '6m');
-  assert.match(r, /tropo <b>3<\/b> spots/);
-  assert.match(r, /Es dependent/, 'tropo alone earns no sky verdict');
+  const tr = tropoRow(el);
+  assert.match(tr, /silent: <b>0<\/b> spots where ~<b>\d+<\/b> expected/);
+  assert.match(tr, /FLAT/);
+  assert.match(tr, /s-poor/);
+});
+
+test('the tropo line scores against its own population baseline', () => {
+  const { api, el } = load();
+  api.baselineData = { bands: { '6m-tropo': { ref: 10, squares: { FN30: 10 } } } };
+  api.myGrids = new Set(['FN30']);
+  const t = Date.now();
+  for (let i = 0; i < 3; i++)
+    api.addSpot('6m', 'FN30', 'FN33', 'FT8', t - i * 60000 - 1000, 'K' + i, 'W2X');
+  api.renderBands(CTX);
+  let tr = tropoRow(el);
+  assert.match(tr, /×<\/b> usual/, 'deviation shown when the annulus is known');
+  api.baselineData = null;
+  api.renderBands(CTX);
+  tr = tropoRow(el);
+  assert.doesNotMatch(tr, /usual/, 'no baseline, no deviation claim');
+});
+
+test('under three tropo spots the line stamps sparse, not a verdict', () => {
+  const { api, el } = load();
+  api.myGrids = new Set(['FN30']);
+  const t = Date.now();
+  for (let i = 0; i < 2; i++)
+    api.addSpot('6m', 'FN30', 'FN33', 'FT8', t - i * 60000 - 1000, 'K' + i, 'W2X');
+  api.renderBands(CTX);
+  const tr = tropoRow(el);
+  assert.match(tr, /sparse/);
+  assert.match(tr, /2 of 3 spots/);
+  assert.match(tr, /needs 3 spots/);
+});
+
+test('the tropo line stays up and reads quiet with nothing heard', () => {
+  const { api, el } = load();
+  api.renderBands(CTX);
+  const tr = tropoRow(el);
+  assert.match(tr, /quiet/);
+  assert.match(tr, /nothing heard 150–500 km/);
+  assert.match(tr, /0 of 3 spots/);
+});
+
+test('a duct gradient alone reads DUCTING, model only', () => {
+  const { api, el } = load();
+  api.renderBands({ ...CTX, refr: { grad: -170, z: 100 } });
+  const tr = tropoRow(el);
+  assert.match(tr, /N-gradient <b>-170<\/b> N\/km \(duct\)/);
+  assert.match(tr, /model only/);
+  assert.match(tr, /DUCTING/);
+  assert.match(tr, /s-open/);
+  assert.match(tr, /79 \/ 100/, '-170 N/km sits just past the duct rung at 75');
+});
+
+test('gradient and tally blend; model switch removes the weather term', () => {
+  const { api, el, els } = load();
+  api.myGrids = new Set(['FN30']);
+  const t = Date.now();
+  for (let i = 0; i < 3; i++)
+    api.addSpot('6m', 'FN30', 'FN33', 'FT8', t - i * 60000 - 1000, 'K' + i, 'W2X');
+  const ctx = { ...CTX, refr: { grad: -120, z: 300 } };
+  api.renderBands(ctx);
+  let tr = tropoRow(el);
+  assert.match(tr, /N-gradient <b>-120<\/b> N\/km/);
+  assert.doesNotMatch(tr, /\(duct\)/);
+  assert.match(tr, /blended live/);
+  els.incModel.checked = false;
+  api.renderBands(ctx);
+  tr = tropoRow(el);
+  assert.doesNotMatch(tr, /N-gradient/, 'model off drops the weather term');
+  assert.match(tr, /live only/);
 });
 
 test('all sources off renders every band without a score', () => {

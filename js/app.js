@@ -97,6 +97,11 @@ function renderBands(ctx) {
   const fill = windowFill();
   const obs = windowObserved();
   const liveW = 0.6 * Math.min(1, fill / 0.5);
+  // One blend for every line, bands and tropo alike: live outvotes the
+  // model as coverage grows, and a missing term concedes to the other.
+  const blend = (lv, m) =>
+    m == null ? (lv == null ? null : Math.round(lv))
+              : Math.round(lv == null ? m : liveW * lv + (1 - liveW) * m);
   const summary = [];
   $('bands').innerHTML = BANDS.map(b => {
     const s = scoreBand(b, ctx);
@@ -114,9 +119,7 @@ function renderBands(ctx) {
     const lv = (useDigi || useCw) ? liveScore(b, st, act, bl ? bl.ref : null, expWin) : null;
     // With the model excluded, a band scores on live spots alone and shows
     // no verdict until it has enough of them.
-    const score = useModel
-      ? (lv == null ? s.score : Math.round(liveW * lv + (1 - liveW) * s.score))
-      : (lv == null ? null : Math.round(lv));
+    const score = blend(lv, useModel ? s.score : null);
     const [word, cls] = score == null ? [st.n ? 'sparse' : 'quiet', 's-none'] : verdict(score);
     summary.push({ nm: b.nm, score, maxKm: st.max });
     let facts = (b.es && ctx.muf < 40 && !st.n)
@@ -144,10 +147,64 @@ function renderBands(ctx) {
       // path; say what convicted the band.
       facts += ` / silent: <b>0</b> spots where ~<b>${Math.round(expWin)}</b> expected`;
     }
-    // 6m only: the tropo tally rides along for orientation, never scored.
-    if (st.tN) {
-      facts += ` / tropo <b>${st.tN}</b> spot${st.tN > 1 ? 's' : ''}, ` +
-        `max <b>${Math.round(st.tMax).toLocaleString()}</b> km`;
+    // 6m only: tropo rides its own line under the band, because the two
+    // behave nothing alike — a tropo opening is real news on 6m yet says
+    // nothing about the ionosphere. It is judged on its own evidence:
+    // tropo is weather, so the model term is the refractivity gradient
+    // over the grid, the live term is the tally, and the two blend with
+    // the same weights the bands use. The ladder has its own words
+    // (tropo is never closed, only flat) and its own gates: DUCTING
+    // needs gradient evidence, and grey only ever means no verdict.
+    let tropo = '';
+    if (b.nm === '6m') {
+      const refr = useModel ? ctx.refr : null;
+      const mT = refr ? tropoModelScore(refr.grad) : null;
+      const tBl = grids ? baselineExpected(baselineData, grids, '6m-tropo', TROPO_REF) : null;
+      // Expected raw tropo spots over the watched slice of the window,
+      // for the damning-silence path — the bands' composition with the
+      // digi curves standing in for both modes, understated on purpose
+      // so silence convicts less, not more.
+      const expWinT = tBl ? tBl.expected * (obs / WINDOWS_PER_HOUR) *
+        Math.min(0.8 * act.rxDigi, (0.8 / 0.6) * act.digi) : null;
+      const lvT = (useDigi || useCw)
+        ? tropoLiveScore(st, act, tBl ? tBl.ref : null, expWinT) : null;
+      const tScore = blend(lvT, mT);
+      const duct = !!(refr && refr.grad <= DUCT_GRAD);
+      const [tWord, tCls] = tScore == null
+        ? [st.tN ? 'sparse' : 'quiet', 's-none']
+        : tropoVerdict(tScore, duct);
+      const bits = [];
+      if (refr) bits.push(`N-gradient <b>${Math.round(refr.grad)}</b> N/km` +
+        (duct ? ' (duct)' : ''));
+      if (st.tN) {
+        let devBit = '';
+        if (tBl) {
+          const dev = tropoRate(st, act) / tBl.expected;
+          devBit = ` (<b>${dev >= 10 ? Math.round(dev) : dev.toFixed(1)}×</b> usual)`;
+        }
+        bits.push(`<b>${st.tN}</b> spot${st.tN > 1 ? 's' : ''} heard${devBit}, ` +
+          `max <b>${Math.round(st.tMax).toLocaleString()}</b> km`);
+      } else if (lvT != null) {
+        // Zero spots reached a verdict through the damning-silence path;
+        // say what convicted the annulus.
+        bits.push(`silent: <b>0</b> spots where ~<b>${Math.round(expWinT)}</b> expected`);
+      }
+      const tail = tScore == null
+        ? (st.tN ? 'needs 3 spots' : '')
+        : (mT != null && lvT != null) ? 'blended live'
+        : mT != null ? 'model only' : 'live only';
+      let tf = bits.join(' / ') || `nothing heard ${LOS_KM}–${MIN_SKY_KM['6m']} km`;
+      if (tail) tf += `, ${tail}`;
+      tropo = `<div class="band tropo">
+      <div class="id"><span class="nm">tropo</span><span class="fq">${b.f.toFixed(2)} MHz</span></div>
+      <div>
+        <div class="track" role="img" aria-label="6m tropo ${tScore == null ? 'awaiting evidence' : `score ${tScore} of 100`}">
+          <div class="fill" style="width: ${tScore == null ? 0 : tScore}%"></div>
+        </div>
+        <div class="facts">${tf}</div>
+      </div>
+      <div class="stampcell"><span class="stamp ${tCls}">${tWord}</span><span class="pct">${tScore == null ? `${st.tN} of 3 spots` : `${tScore} / 100`}</span></div>
+    </div>`;
     }
     return `<div class="band">
       <div class="id"><span class="nm">${b.nm}</span><span class="fq">${b.f.toFixed(2)} MHz</span></div>
@@ -158,7 +215,7 @@ function renderBands(ctx) {
         <div class="facts">${facts}</div>
       </div>
       <div class="stampcell"><span class="stamp ${cls}">${word}</span><span class="pct">${score == null ? `${st.n} of 3 spots` : `${score} / 100`}</span></div>
-    </div>`;
+    </div>` + tropo;
   }).join('');
   const lede = $('lede');
   lede.innerHTML = ledeHTML(summary, ctx);
@@ -234,15 +291,19 @@ async function refresh() {
       ? { gmLat: geomagLat(pos.lat, pos.lon), kp: lastWx.kp, protons: lastWx.protons }
       : null);
     $('status').innerHTML = statusTiles(lastWx, null, muf0, luf0, posTile, sunTile).join('');
+    // No refr: the gradient is the old grid's air, and unlike the global
+    // indices it says nothing here. The tropo line stands on its tally
+    // until the new grid's profile lands.
     lastCtx = { muf: muf0, kp: lastWx.kp, sunEl, lat: pos.lat, lon: pos.lon,
                 xrayFlux: lastWx.xr.flux, protons: lastWx.protons,
-                sunRise: sun.rise, sunSet: sun.set };
+                refr: null, sunRise: sun.rise, sunSet: sun.set };
     connectLive(pos);   // resets the spot window to the new neighborhood
     renderBands(lastCtx);
   }
 
-  const [sfiR, kpR, xrR, ionR, prR] = await Promise.allSettled([
-    fetchSFI(), fetchKp(), fetchXray(), fetchIonosonde(pos), fetchProtons()
+  const [sfiR, kpR, xrR, ionR, prR, rfR] = await Promise.allSettled([
+    fetchSFI(), fetchKp(), fetchXray(), fetchIonosonde(pos), fetchProtons(),
+    fetchRefractivity(pos)
   ]);
 
   // Treat "fulfilled but not a finite number" the same as a failed fetch,
@@ -261,6 +322,10 @@ async function refresh() {
   // term simply drops out, exactly like the pre-proton model.
   const protons = prR.status === 'fulfilled' && Number.isFinite(prR.value?.day)
     ? prR.value : null;
+  // The tropo line's weather term; when Open-Meteo is unreachable the
+  // line stands on its live tally alone.
+  const refr = rfR.status === 'fulfilled' && Number.isFinite(rfR.value?.grad)
+    ? rfR.value : null;
 
   let muf = ion ? localizeSondeMUF(ion.muf, sfi, kp, now, pos, ion)
                 : estimateMUF(sfi, sunEl, kp, pos.lat, now);
@@ -283,7 +348,7 @@ async function refresh() {
   }
 
   lastCtx = { muf, kp, sunEl, lat: pos.lat, lon: pos.lon, xrayFlux: xr.flux,
-              protons, sunRise: sun.rise, sunSet: sun.set };
+              protons, refr, sunRise: sun.rise, sunSet: sun.set };
   renderBands(lastCtx);
   connectLive(pos);
 }

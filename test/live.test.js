@@ -64,13 +64,16 @@ test('6m splits its near field: line of sight dropped, tropo kept apart', () => 
   api.addSpot('6m', 'FN30', 'FN30', 'FT8', t);    // same square, line of sight
   api.addSpot('6m', 'FN30', 'FN31', 'FT8', t);    // ~111 km, line of sight
   api.addSpot('6m', 'FN30', 'FN33', 'FT8', t);    // ~334 km, tropo
+  api.addSpot('6m', 'FN32', 'FN30', 'FT8', t);    // ~223 km, tropo, heard here
   api.addSpot('6m', 'FN30', 'FN55', 'FT8', t);    // ~640 km, sky (Es)
-  assert.strictEqual(api.spots.length, 2);
+  assert.strictEqual(api.spots.length, 3);
   const st = api.liveStats('6m', true, true, 1);
   assert.strictEqual(st.n, 1, 'only the Es spot counts as sky');
   assert.ok(st.max > 500, 'sky reach comes from the Es spot');
-  assert.strictEqual(st.tN, 1, 'the tropo spot rides its own tally');
+  assert.strictEqual(st.tN, 2, 'the tropo spots ride their own tally');
   assert.ok(st.tMax > 250 && st.tMax < 500);
+  assert.ok(st.tMax2 > 150 && st.tMax2 < st.tMax, 'second-longest guard tracked');
+  assert.ok(st.wtRx > 0 && st.wtTx > 0, 'tropo rates split by direction');
 });
 
 test('callsigns keep same-second spots from different stations apart', () => {

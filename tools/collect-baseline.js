@@ -76,14 +76,23 @@ async function main() {
     if (!current) return;
     try {
       const m = JSON.parse(payload.toString());
-      const b = bands[current];
+      let b = bands[current];
       const gs = String(m.sl || '').slice(0, 4).toUpperCase();
       const gr = String(m.rl || '').slice(0, 4).toUpperCase();
       const ps = lib.parseGrid(gs), pr = lib.parseGrid(gr);
       // Same rule the page applies in addSpot: pairs inside the band's
       // ground-wave radius are not propagation, and the baseline must
-      // count the same population the page counts.
-      if (ps && pr && lib.kmBetween(ps, pr) < lib.MIN_SKY_KM[current]) return;
+      // count the same population the page counts. On 6m the annulus
+      // between line of sight and the Es floor is the tropo pseudo-band's
+      // population, tallied into its own bucket during the same window —
+      // no extra subscription time, just spots no longer thrown away.
+      if (ps && pr) {
+        const km = lib.kmBetween(ps, pr);
+        if (km < lib.MIN_SKY_KM[current]) {
+          if (current !== '6m' || km < lib.LOS_KM) return;
+          b = bands['6m-tropo'];
+        }
+      }
       b.global++;
       if (ps) (b.squares[gs] ??= [0, 0])[0]++;
       if (pr) (b.squares[gr] ??= [0, 0])[1]++;
@@ -93,12 +102,15 @@ async function main() {
   for (const { nm } of lib.BANDS) {
     const topic = `pskr/filter/v2/${nm}/+/+/+/+/+/+/+`;
     bands[nm] = { global: 0, squares: {} };
+    if (nm === '6m') bands['6m-tropo'] = { global: 0, squares: {} };
     await new Promise((res, rej) => client.subscribe(topic, e => e ? rej(e) : res()));
     current = nm;
     await new Promise(res => setTimeout(res, SAMPLE_SECS * 1000));
     current = null;
     await new Promise(res => client.unsubscribe(topic, () => res()));
     console.log(nm, bands[nm].global, 'spots,', Object.keys(bands[nm].squares).length, 'squares');
+    if (nm === '6m') console.log('6m-tropo', bands['6m-tropo'].global, 'spots,',
+      Object.keys(bands['6m-tropo'].squares).length, 'squares');
   }
   client.end(true);
 
