@@ -73,3 +73,37 @@ test('all sources off renders every band without a score', () => {
   api.renderBands(CTX);
   assert.doesNotMatch(el('bands').innerHTML, /\d+ \/ 100/);
 });
+
+test('refresh: no blanking; a grid change repaints in place from the model', async () => {
+  const { api, el, els } = load();
+  els.grid.value = 'FN30';
+  // First load: fetches all fail in the sandbox, fallbacks fill in.
+  await api.refresh();
+  const firstStatus = els.status.innerHTML;
+  assert.match(firstStatus, /SFI/);
+  assert.match(firstStatus, /73\.0°W/);
+  assert.ok(els.bands.innerHTML.includes('20m'), 'bands rendered on first load');
+
+  // Same-grid refresh keeps the old row on screen while fetching: the
+  // status row must never pass through the placeholder or go blank.
+  els.status.innerHTML = firstStatus;
+  const p = api.refresh();
+  assert.strictEqual(els.status.innerHTML, firstStatus, 'no wipe during same-grid refresh');
+  await p;
+
+  // Seed live spots for the first grid, then move: tiles and bands must
+  // repaint immediately (before any fetch answers) with the new
+  // position, the old neighborhood's spots gone, and model verdicts up.
+  api.myGrids = new Set(['FN30']);
+  const t = Date.now();
+  for (let i = 0; i < 5; i++) api.addSpot('20m', 'IO91', 'FN30', 'FT8', t - i * 60000 - 1000);
+  api.renderBands({ muf: 20, kp: 2, sunEl: 30, lat: 40.5, lon: -73, xrayFlux: 4e-7 });
+  assert.match(els.bands.innerHTML, /↓5/, 'seeded spots visible before the move');
+  els.grid.value = 'JN48';
+  const p2 = api.refresh();
+  assert.match(els.status.innerHTML, /9\.0°E/, 'new position painted synchronously');
+  assert.match(els.status.innerHTML, /estimated from SFI/, 'sonde claim dropped until refetch');
+  assert.ok(!els.bands.innerHTML.includes('↓'), 'old neighborhood spots cleared');
+  assert.match(els.bands.innerHTML, /MUF ratio/, 'bands stand on the model meanwhile');
+  await p2;
+});

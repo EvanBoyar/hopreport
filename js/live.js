@@ -164,8 +164,11 @@ function addSpot(band, gridA, gridB, mode, heardMs, txCall, rxCall, src) {
 }
 
 function liveStats(bandName, useDigi, useCw, fill) {
-  // CW spots reach the feed through RBN's skimmers; the CW switch gates
-  // them and the digi switch gates every other mode. Counts are kept per
+  // CW spots come from RBN skimmers, though the live feed carries only
+  // the minority that report to PSK Reporter directly (measured ~12% of
+  // online nodes, batch-uploaded minutes late); the rest arrive through
+  // the retrieval poll. The CW switch gates them and the digi switch
+  // gates every other mode. Counts are kept per
   // mode and per direction so the scorer can weigh and normalize each,
   // both raw (n, cw and the display splits) and coverage-weighted (w*).
   // The weighted counts are hourly rates: an MQTT spot was caught in only
@@ -277,7 +280,11 @@ function connectLive(pos) {
   myGrids = new Set(grids);   // before any bail-out: retrieval spots need it too
   const key = grids.join(',');
   if (key === mqttGrids && mqttClient && (mqttClient.connected || cascadeActive)) return;
-  if (mqttClient) { try { mqttClient.end(true); } catch (e) {} mqttClient = null; spots = []; ownHeard = []; liveSince = 0; lostAt = 0; }
+  if (mqttClient) { try { mqttClient.end(true); } catch (e) {} mqttClient = null; }
+  // The old neighborhood's window empties whether or not a broker was
+  // ever reached: retrieval spots are grid-blind and would otherwise
+  // survive the move.
+  spots = []; ownHeard = []; liveSince = 0; lostAt = 0;
   mqttGrids = key;
   restoreSpots(key);   // before the mqtt bail-out: a broker-less page still keeps its window
   if (!window.mqtt) {

@@ -526,8 +526,11 @@
         outlive any calendar feed this page could fetch. SSB-only majors are ignored since
         phone barely reaches this feed, and regional events like Field Day apply only when
         your grid is in the Americas. An active contest is shown under the title. Measured reality outvotes the
-        prediction in both directions. CW spots arrive through the same feed because PSK
-        Reporter ingests the Reverse Beacon Network's skimmer spots. The count switches above
+        prediction in both directions. CW spots come from the Reverse Beacon Network's
+        skimmers, but by two roads of very different speed: PSK Reporter's database ingests
+        the whole network and answers the five-minute retrieval poll, while its live feed
+        carries only the minority of skimmers that report to it directly, in batches minutes
+        behind &mdash; so a CW change registers a poll or two later than an FT8 one. The count switches above
         the log choose what feeds each score: digital spots, CW spots, and the computed
         model can be mixed freely, and with the model excluded a band shows no verdict until
         it collects three live spots &mdash; with one exception: when the window has been
@@ -555,9 +558,12 @@
         callsign query folds your own reception reports in through the retrieval API, limited
         to one query every five minutes under PSK Reporter's rules; once a callsign is
         entered it is remembered and queried on that cadence automatically. The live feed is
-        also filtered by that callsign, so stations hearing your signal appear in the heard
-        line as they happen, even while the retrieval API is unreachable; receptions inside
-        the ground-wave radius show there too, though they never enter the scores. If every source fails at
+        also filtered by that callsign, so digital stations hearing your signal appear in
+        the heard line as they happen, even while the retrieval API is unreachable. CW
+        receptions usually wait for the next retrieval instead, since most skimmers never
+        reach the live feed &mdash; expect a HamAlert-style pager to beat this line by
+        several minutes on CW. Receptions inside
+        the ground-wave radius show here too, though they never enter the scores. If every source fails at
         once, the browser or network is blocking cross-origin requests; grab the project
         folder and open index.html locally.
       </p>

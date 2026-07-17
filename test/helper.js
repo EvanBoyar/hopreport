@@ -59,7 +59,7 @@ function load(opts = {}) {
       fetchProtons, scoreBand, verdict,
       parseFeedTime, fetchKp, fetchIonosonde, localizeSondeMUF,
       nthFullWeekendSat, activeContest, activityFactor,
-      liveScore, liveStats, addSpot, pruneSpots, renderBands,
+      liveScore, liveStats, addSpot, pruneSpots, renderBands, refresh,
       normalizedRate, baselineExpected, setLiveState, windowFill,
       windowObserved,
       connectLive, saveSpots, restoreSpots, queryMySpots, setCall,

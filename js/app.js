@@ -44,7 +44,35 @@ function fieldTile(k, v, unit, srcClass, srcText) {
     <div class="src ${srcClass}">${srcText}</div></div>`;
 }
 
+function statusTiles(wx, ion, muf, luf, posTile, sunTile) {
+  const tiles = [
+    fieldTile('SFI', wx.sfi, 'sfu',
+      wx.sfiOk ? 'ok' : 'bad',
+      wx.sfiOk ? 'NOAA SWPC' : 'unavailable, assumed 120'),
+    fieldTile('Kp', wx.kp.toFixed(1), '',
+      wx.kpOk ? 'ok' : 'bad',
+      wx.kpOk ? 'NOAA SWPC' : 'unavailable, assumed 2'),
+    fieldTile('X-ray', wx.xr.cls, '',
+      wx.xrOk ? 'ok' : 'bad',
+      wx.xrOk ? 'GOES long band' : 'unavailable, quiet assumed'),
+    fieldTile('MUF(3000)', muf.toFixed(1), 'MHz',
+      ion ? 'ok' : 'est',
+      ion ? `${ion.name}, ${ion.km} km, ${ion.ageMin} min old` +
+            (Math.abs(muf / ion.muf - 1) > 0.02 ? ', scaled to your sun' : '')
+          : 'estimated from SFI, season, and sun angle'),
+    fieldTile('LUF', luf < 1.8 ? 'below 160m' : luf.toFixed(1),
+      luf < 1.8 ? '' : 'MHz',
+      'est', 'from sun angle, X-ray, and proton flux'),
+  ];
+  if (ion) tiles.push(fieldTile('foF2', ion.fof2.toFixed(1), 'MHz', 'ok', 'NVIS critical freq'));
+  tiles.push(posTile, sunTile);
+  return tiles;
+}
+
 let baselineData = null;
+// The last resolved space weather (fallbacks already applied): what a
+// grid change can honestly repaint from before any fetch answers.
+let lastWx = null;
 async function loadBaseline() {
   try { baselineData = await getJSON(BASELINE_URL); }
   catch (e) { /* absent or unreachable: scores fall back to the constant */ }
@@ -184,10 +212,34 @@ async function refresh() {
       ? (sun.set ? `daylight, sets ${hhmmUTC(sun.set)} UTC` : 'daylight around the clock')
       : (sun.rise ? `night, rises ${hhmmUTC(sun.rise)} UTC` : 'night around the clock'));
 
-  $('status').innerHTML =
-    fieldTile('Status', '&hellip;', '', 'est', 'fetching space weather') +
-    posTile + sunTile;
-  $('bands').innerHTML = '';
+  // The placeholder row is for the first paint only, when there is
+  // nothing to keep on screen. A plain refresh — the 10 minute tick,
+  // the button — leaves the previous tiles and bands up and repaints in
+  // place when the fetches land, the same seamless way the 30 second
+  // band tick does; blanking here is what made the page flicker on
+  // every space-weather cycle. A grid change is the middle case: the
+  // old grid's data must not linger, but the page must not collapse
+  // either, so everything knowable without a fetch repaints now —
+  // position, sun, and model verdicts under the last space weather,
+  // with the spot window restarted for the new neighborhood — and the
+  // tiles refine in place when the fetches land.
+  if (!$('status').innerHTML) {
+    $('status').innerHTML =
+      fieldTile('Status', '&hellip;', '', 'est', 'fetching space weather') +
+      posTile + sunTile;
+  } else if (lastCtx && lastWx &&
+             (pos.lat !== lastCtx.lat || pos.lon !== lastCtx.lon)) {
+    const muf0 = estimateMUF(lastWx.sfi, sunEl, lastWx.kp, pos.lat, now);
+    const luf0 = estimateLUF(sunEl, lastWx.xr.flux, lastWx.protons
+      ? { gmLat: geomagLat(pos.lat, pos.lon), kp: lastWx.kp, protons: lastWx.protons }
+      : null);
+    $('status').innerHTML = statusTiles(lastWx, null, muf0, luf0, posTile, sunTile).join('');
+    lastCtx = { muf: muf0, kp: lastWx.kp, sunEl, lat: pos.lat, lon: pos.lon,
+                xrayFlux: lastWx.xr.flux, protons: lastWx.protons,
+                sunRise: sun.rise, sunSet: sun.set };
+    connectLive(pos);   // resets the spot window to the new neighborhood
+    renderBands(lastCtx);
+  }
 
   const [sfiR, kpR, xrR, ionR, prR] = await Promise.allSettled([
     fetchSFI(), fetchKp(), fetchXray(), fetchIonosonde(pos), fetchProtons()
@@ -216,28 +268,8 @@ async function refresh() {
   const luf = estimateLUF(sunEl, xr.flux, protons
     ? { gmLat: geomagLat(pos.lat, pos.lon), kp, protons } : null);
 
-  const tiles = [
-    fieldTile('SFI', sfi, 'sfu',
-      sfiOk ? 'ok' : 'bad',
-      sfiOk ? 'NOAA SWPC' : 'unavailable, assumed 120'),
-    fieldTile('Kp', kp.toFixed(1), '',
-      kpOk ? 'ok' : 'bad',
-      kpOk ? 'NOAA SWPC' : 'unavailable, assumed 2'),
-    fieldTile('X-ray', xr.cls, '',
-      xrOk ? 'ok' : 'bad',
-      xrOk ? 'GOES long band' : 'unavailable, quiet assumed'),
-    fieldTile('MUF(3000)', muf.toFixed(1), 'MHz',
-      ion ? 'ok' : 'est',
-      ion ? `${ion.name}, ${ion.km} km, ${ion.ageMin} min old` +
-            (Math.abs(muf / ion.muf - 1) > 0.02 ? ', scaled to your sun' : '')
-          : 'estimated from SFI, season, and sun angle'),
-    fieldTile('LUF', luf < 1.8 ? 'below 160m' : luf.toFixed(1),
-      luf < 1.8 ? '' : 'MHz',
-      'est', 'from sun angle, X-ray, and proton flux'),
-  ];
-  if (ion) tiles.push(fieldTile('foF2', ion.fof2.toFixed(1), 'MHz', 'ok', 'NVIS critical freq'));
-  tiles.push(posTile, sunTile);
-  $('status').innerHTML = tiles.join('');
+  lastWx = { sfi, sfiOk, kp, kpOk, xr, xrOk, protons };
+  $('status').innerHTML = statusTiles(lastWx, ion, muf, luf, posTile, sunTile).join('');
 
   if (luf >= muf) {
     msg.textContent =
