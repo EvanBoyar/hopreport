@@ -293,6 +293,11 @@
   .facts { font-size: 10.5px; color: var(--faded); margin-top: 3px; }
   .facts b { color: var(--ink); font-weight: 700; }
   .stampcell { text-align: center; }
+  /* The stamp's lean carries meaning: level when the line is at its
+     best, tilting further askew the worse the news, like a hastier
+     hand. renderBands sets --tilt from the score (0deg at 75 and
+     above, -12deg at zero; the tropo ladder leans half as far since
+     its floor means ordinary, not dead); no verdict means no lean. */
   .stamp {
     display: inline-block;
     font-family: var(--display);
@@ -301,11 +306,9 @@
     border: 2px solid currentColor; border-radius: 3px;
     padding: 2px 8px 1px 10px;
     white-space: nowrap;
-    transform: rotate(-5deg);
+    transform: rotate(var(--tilt, 0deg));
     opacity: 0.88;
   }
-  .band:nth-child(2n) .stamp { transform: rotate(-8deg); }
-  .band:nth-child(3n) .stamp { transform: rotate(-3deg); }
   .pct { display: block; font-size: 10px; color: var(--faded); margin-top: 2px; }
   .s-none { color: var(--faded); }
   .s-open { color: var(--green); }
@@ -562,7 +565,9 @@
         &mdash; and only FLAT, with a lone far-edge spot making the line abstain
         rather than convict. DUCTING is the only green stamp on the line; ENHANCED
         wears yellow-green at 75 and above and yellow below, NORMAL orange, FLAT
-        orange-red. The ladder has its own words &mdash; DUCTING, ENHANCED, NORMAL, FLAT
+        orange-red. Every stamp also leans with its verdict &mdash; level at its
+        best, further askew the worse the news &mdash; and the tropo ladder leans
+        half as far as the bands', because its floor means ordinary, not dead. The ladder has its own words &mdash; DUCTING, ENHANCED, NORMAL, FLAT
         &mdash; because tropo is never closed, only flat, and DUCTING is reserved for
         gradient evidence: a spot capped at the 500&nbsp;km floor cannot prove a duct,
         and the strongest tropo overflows into the sky count, where distance cannot
@@ -650,6 +655,6 @@
 <script src="js/geo.js?v=5d126995"></script>
 <script src="js/model.js?v=f8d44960"></script>
 <script src="js/live.js?v=8d263fd3"></script>
-<script src="js/app.js?v=dd5aa16a"></script>
+<script src="js/app.js?v=3f48987c"></script>
 </body>
 </html>

@@ -141,6 +141,11 @@ function renderBands(ctx) {
     // no verdict until it has enough of them.
     const score = blend(lv, useModel ? s.score : null);
     const [word, cls] = score == null ? [st.n ? 'sparse' : 'quiet', 's-none'] : verdict(score);
+    // The stamp leans with the verdict: level at OPEN (75 and up),
+    // tilting smoothly to -12deg at a dead band, like a hastier hand.
+    // No verdict, no lean.
+    const tilt = score == null ? 0
+      : (-12 * Math.max(0, 75 - score) / 75).toFixed(1);
     summary.push({ nm: b.nm, score, maxKm: st.reach });
     // The facts line names only what moves the needle. A model gate
     // shows up only when it is actually biting — most bands pass most
@@ -216,6 +221,9 @@ function renderBands(ctx) {
       const [tWord, tCls] = tScore == null
         ? [st.tN ? 'sparse' : 'quiet', 's-none']
         : tropoVerdict(tScore, duct);
+      // Half the bands' lean: the tropo floor means ordinary, not dead.
+      const tTilt = tScore == null ? 0
+        : (-6 * Math.max(0, 75 - tScore) / 75).toFixed(1);
       const tBits = [];
       // The winning span's heights (above ground) tell a shallow skin
       // inversion from a deep duct at a glance.
@@ -251,7 +259,7 @@ function renderBands(ctx) {
         </div>
         <div class="facts">${tf}</div>
       </div>
-      <div class="stampcell"><span class="stamp ${tCls}">${tWord}</span><span class="pct">${tScore == null ? `${st.tN} of 3 spots` : `${tScore} / 100`}</span></div>
+      <div class="stampcell"><span class="stamp ${tCls}" style="--tilt: ${tTilt}deg">${tWord}</span><span class="pct">${tScore == null ? `${st.tN} of 3 spots` : `${tScore} / 100`}</span></div>
     </div>`;
     }
     return `<div class="band">
@@ -262,7 +270,7 @@ function renderBands(ctx) {
         </div>
         <div class="facts">${facts}</div>
       </div>
-      <div class="stampcell"><span class="stamp ${cls}">${word}</span><span class="pct">${score == null ? `${st.n} of 3 spots` : `${score} / 100`}</span></div>
+      <div class="stampcell"><span class="stamp ${cls}" style="--tilt: ${tilt}deg">${word}</span><span class="pct">${score == null ? `${st.n} of 3 spots` : `${score} / 100`}</span></div>
     </div>` + tropo;
   }).join('');
   const lede = $('lede');
