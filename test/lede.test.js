@@ -26,7 +26,8 @@ test('ledeHTML names the open bands and the reach', () => {
   ];
   const s = api.ledeHTML(rows, { sunEl: 30 });
   assert.match(s, /<b>20m-40m<\/b> are open/);
-  assert.match(s, /spots heard to <b>6,213 km<\/b>/);
+  assert.match(s, /spots heard to <b>6,200 km<\/b>/,
+    'distances wear two significant figures');
 });
 
 test('ledeHTML points at sunset when the low bands are down by day', () => {

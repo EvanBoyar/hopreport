@@ -22,7 +22,7 @@ function ledeHTML(rows, ctx) {
   if (open.length) {
     const reach = Math.max(...open.map(r => r.maxKm || 0));
     s = `<b>${bandRangeList(open.map(r => r.nm))}</b> ${open.length > 1 ? 'are' : 'is'} open` +
-      (reach > 0 ? `, with spots heard to <b>${Math.round(reach).toLocaleString()} km</b>` : '') + '.';
+      (reach > 0 ? `, with spots heard to <b>${fmtKm(reach)} km</b>` : '') + '.';
   } else if (good.length) {
     s = `Nothing is wide open; <b>${bandRangeList(good.map(r => r.nm))}</b> ` +
       `${good.length > 1 ? 'are' : 'is'} worth a call.`;
@@ -73,6 +73,26 @@ let baselineData = null;
 // The last resolved space weather (fallbacks already applied): what a
 // grid change can honestly repaint from before any fetch answers.
 let lastWx = null;
+
+function storedWx() {
+  // Space weather from the last visit (saved on every refresh), for the
+  // reload-time first paint: hours-old real indices beat the standing
+  // defaults — a reload during a Kp 7 storm must not flash green — and
+  // the fetches repaint in place seconds later either way. The Ok flags
+  // stay false so nothing downstream dresses a stored reading up as a
+  // live one.
+  try {
+    const d = JSON.parse(localStorage.getItem('hopWx'));
+    if (d && d.v === 1 && Number.isFinite(d.sfi) && Number.isFinite(d.kp) &&
+        Date.now() - d.savedAt < 3 * 60 * 60 * 1000) {
+      return { sfi: d.sfi, sfiOk: false, kp: d.kp, kpOk: false,
+               xr: (d.xr && Number.isFinite(d.xr.flux)) ? d.xr : { cls: '?', flux: 1e-7 },
+               xrOk: false,
+               protons: (d.protons && Number.isFinite(d.protons.day)) ? d.protons : null };
+    }
+  } catch (e) {}
+  return null;
+}
 async function loadBaseline() {
   try { baselineData = await getJSON(BASELINE_URL); }
   catch (e) { /* absent or unreachable: scores fall back to the constant */ }
@@ -121,32 +141,55 @@ function renderBands(ctx) {
     // no verdict until it has enough of them.
     const score = blend(lv, useModel ? s.score : null);
     const [word, cls] = score == null ? [st.n ? 'sparse' : 'quiet', 's-none'] : verdict(score);
-    summary.push({ nm: b.nm, score, maxKm: st.max });
-    let facts = (b.es && ctx.muf < 40 && !st.n)
-      ? `Es dependent. Watch the band, not this number.`
-      : `MUF ratio <b>${(b.f / ctx.muf).toFixed(2)}</b> / ` +
-        `abs <b>${s.a.toFixed(2)}</b> / geo <b>${s.g.toFixed(2)}</b>`;
+    summary.push({ nm: b.nm, score, maxKm: st.reach });
+    // The facts line names only what moves the needle. A model gate
+    // shows up only when it is actually biting — most bands pass most
+    // gates most of the time, and the old row of 1.00s was noise. Reach
+    // is liveStats' corroborated figure, the same one the score trusts;
+    // a tally whose every spot sits in one far square shows its longest
+    // spot labeled max instead, an honest claim that earned no reach
+    // credit. The blend is named only in its exceptional states, since
+    // three or more spots blending with the model is the house style.
+    const bits = [];
+    // F2 closed and Es unknowable from indices: the gates have nothing
+    // to say, so the tally speaks alone once spots exist.
+    const esBlind = b.es && ctx.muf < 40;
+    if (esBlind) {
+      if (!st.n) bits.push('Es dependent. Watch the band, not this number.');
+    } else if (useModel) {
+      const r = b.f / ctx.muf;
+      if (r > 0.82) bits.push(`${r > 1 ? 'above' : 'near'} MUF (<b>${r.toFixed(2)}×</b>)`);
+      if (s.a < 0.95) bits.push(`absorption <b>×${s.a.toFixed(2)}</b>`);
+      if (s.g < 0.95) bits.push(`Kp <b>×${s.g.toFixed(2)}</b>`);
+    }
     if (st.n) {
       const plural = st.n > 1 ? 's' : '';
       const modeBit = !useDigi
-        ? `<b>${st.n}</b> CW spot${plural}`
-        : `<b>${st.n}</b> spot${plural}${useCw && st.cw ? ` (${st.cw} CW)` : ''}`;
+        ? `<b>${fmtCount(st.n)}</b> CW spot${plural}`
+        : `<b>${fmtCount(st.n)}</b> spot${plural}${useCw && st.cw ? ` (${fmtCount(st.cw)} CW)` : ''}`;
       const rxN = st.dRx + st.cRx, txN = st.dTx + st.cTx;
-      const dirBit = `<span title="heard in your area / your area heard elsewhere">↓${rxN} ↑${txN}</span>`;
+      const dirBit = `<span title="heard in your area / your area heard elsewhere">↓${fmtCount(rxN)} ↑${fmtCount(txN)}</span>`;
       let devBit = '';
       if (bl) {
         // liveStats already scaled the counts to a per-hour rate.
         const dev = normalizedRate(st, act) / bl.expected;
         devBit = ` (<b>${dev >= 10 ? Math.round(dev) : dev.toFixed(1)}×</b> usual)`;
       }
-      const tail = lv != null ? (useModel ? 'blended live' : 'live only')
+      const reachBit = st.reach
+        ? `reach <b>${fmtKm(st.reach)}</b> km`
+        : `max <b>${fmtKm(st.max)}</b> km`;
+      const tail = lv != null ? (useModel ? '' : 'live only')
                               : (useModel ? 'model only' : 'needs 3 spots');
-      facts += ` / ${modeBit} ${dirBit}${devBit}, max <b>${Math.round(st.max).toLocaleString()}</b> km, ${tail}`;
+      bits.push(`${modeBit} ${dirBit}${devBit}, ${reachBit}${tail ? `, ${tail}` : ''}`);
     } else if (lv != null) {
       // Zero spots can only reach a verdict through the damning-silence
       // path; say what convicted the band.
-      facts += ` / silent: <b>0</b> spots where ~<b>${Math.round(expWin)}</b> expected`;
+      bits.push(`silent: <b>0</b> spots where ~<b>${Math.round(expWin)}</b> expected`);
+    } else if (score != null && !esBlind) {
+      // The Es disclaimer already owns the empty-tally case there.
+      bits.push('model only');
     }
+    const facts = bits.join(' / ');
     // 6m only: tropo rides its own line under the band, because the two
     // behave nothing alike — a tropo opening is real news on 6m yet says
     // nothing about the ionosphere. It is judged on its own evidence:
@@ -173,10 +216,10 @@ function renderBands(ctx) {
       const [tWord, tCls] = tScore == null
         ? [st.tN ? 'sparse' : 'quiet', 's-none']
         : tropoVerdict(tScore, duct);
-      const bits = [];
+      const tBits = [];
       // The winning span's heights (above ground) tell a shallow skin
       // inversion from a deep duct at a glance.
-      if (refr) bits.push(`N-gradient <b>${Math.round(refr.grad)}</b> N/km, ` +
+      if (refr) tBits.push(`N-gradient <b>${Math.round(refr.grad)}</b> N/km, ` +
         `${refr.z}–${refr.top} m` + (duct ? ' (duct)' : ''));
       if (st.tN) {
         let devBit = '';
@@ -184,18 +227,21 @@ function renderBands(ctx) {
           const dev = tropoRate(st, act) / tBl.expected;
           devBit = ` (<b>${dev >= 10 ? Math.round(dev) : dev.toFixed(1)}×</b> usual)`;
         }
-        bits.push(`<b>${st.tN}</b> spot${st.tN > 1 ? 's' : ''} heard${devBit}, ` +
-          `max <b>${Math.round(st.tMax).toLocaleString()}</b> km`);
+        const reachBit = st.tReach
+          ? `reach <b>${fmtKm(st.tReach)}</b> km`
+          : `max <b>${fmtKm(st.tMax)}</b> km`;
+        tBits.push(`<b>${fmtCount(st.tN)}</b> spot${st.tN > 1 ? 's' : ''} heard${devBit}, ` +
+          reachBit);
       } else if (lvT != null) {
         // Zero spots reached a verdict through the damning-silence path;
         // say what convicted the annulus.
-        bits.push(`silent: <b>0</b> spots where ~<b>${Math.round(expWinT)}</b> expected`);
+        tBits.push(`silent: <b>0</b> spots where ~<b>${Math.round(expWinT)}</b> expected`);
       }
       const tail = tScore == null
         ? (st.tN ? 'needs 3 spots' : '')
-        : (mT != null && lvT != null) ? 'blended live'
+        : (mT != null && lvT != null) ? ''
         : mT != null ? 'model only' : 'live only';
-      let tf = bits.join(' / ') || `nothing heard ${LOS_KM}–${MIN_SKY_KM['6m']} km`;
+      let tf = tBits.join(' / ') || `nothing heard ${LOS_KM}–${MIN_SKY_KM['6m']} km`;
       if (tail) tf += `, ${tail}`;
       tropo = `<div class="band tropo">
       <div class="id"><span class="nm">tropo</span><span class="fq">${b.f.toFixed(2)} MHz</span></div>
@@ -276,30 +322,41 @@ async function refresh() {
   // the button — leaves the previous tiles and bands up and repaints in
   // place when the fetches land, the same seamless way the 30 second
   // band tick does; blanking here is what made the page flicker on
-  // every space-weather cycle. A grid change is the middle case: the
-  // old grid's data must not linger, but the page must not collapse
-  // either, so everything knowable without a fetch repaints now —
-  // position, sun, and model verdicts under the last space weather,
-  // with the spot window restarted for the new neighborhood — and the
-  // tiles refine in place when the fetches land.
+  // every space-weather cycle.
   if (!$('status').innerHTML) {
     $('status').innerHTML =
       fieldTile('Status', '&hellip;', '', 'est', 'fetching space weather') +
       posTile + sunTile;
-  } else if (lastCtx && lastWx &&
-             (pos.lat !== lastCtx.lat || pos.lon !== lastCtx.lon)) {
-    const muf0 = estimateMUF(lastWx.sfi, sunEl, lastWx.kp, pos.lat, now);
-    const luf0 = estimateLUF(sunEl, lastWx.xr.flux, lastWx.protons
-      ? { gmLat: geomagLat(pos.lat, pos.lon), kp: lastWx.kp, protons: lastWx.protons }
-      : null);
-    $('status').innerHTML = statusTiles(lastWx, null, muf0, luf0, posTile, sunTile).join('');
-    // No refr: the gradient is the old grid's air, and unlike the global
-    // indices it says nothing here. The tropo line stands on its tally
-    // until the new grid's profile lands.
-    lastCtx = { muf: muf0, kp: lastWx.kp, sunEl, lat: pos.lat, lon: pos.lon,
-                xrayFlux: lastWx.xr.flux, protons: lastWx.protons,
+  }
+  // First load and grid changes paint everything knowable without a
+  // fetch right now: position, sun, the spot window restored for this
+  // neighborhood, and model verdicts under the last known space weather
+  // — this session's, a recent visit's (hopWx), or the standing
+  // defaults. Waiting on the fetches here is what left a reloaded page
+  // looking for ten seconds like its persisted spots were gone. The
+  // tiles repaint only from in-session indices; a fresh page keeps the
+  // fetching placeholder rather than dressing stored values up as
+  // current, while the band scores may lean on them since the model is
+  // an estimate either way. Everything refines in place when the
+  // fetches land.
+  if (!lastCtx || pos.lat !== lastCtx.lat || pos.lon !== lastCtx.lon) {
+    const wx0 = lastWx || storedWx() ||
+      { sfi: 120, sfiOk: false, kp: 2, kpOk: false,
+        xr: { cls: '?', flux: 1e-7 }, xrOk: false, protons: null };
+    const muf0 = estimateMUF(wx0.sfi, sunEl, wx0.kp, pos.lat, now);
+    if (lastWx) {
+      const luf0 = estimateLUF(sunEl, wx0.xr.flux, wx0.protons
+        ? { gmLat: geomagLat(pos.lat, pos.lon), kp: wx0.kp, protons: wx0.protons }
+        : null);
+      $('status').innerHTML = statusTiles(wx0, null, muf0, luf0, posTile, sunTile).join('');
+    }
+    // No refr: the gradient is another grid's air (or another hour's),
+    // and unlike the global indices it says nothing here. The tropo
+    // line stands on its tally until this grid's profile lands.
+    lastCtx = { muf: muf0, kp: wx0.kp, sunEl, lat: pos.lat, lon: pos.lon,
+                xrayFlux: wx0.xr.flux, protons: wx0.protons,
                 refr: null, sunRise: sun.rise, sunSet: sun.set };
-    connectLive(pos);   // resets the spot window to the new neighborhood
+    connectLive(pos);   // restores the persisted window for this neighborhood
     renderBands(lastCtx);
   }
 
@@ -336,6 +393,11 @@ async function refresh() {
     ? { gmLat: geomagLat(pos.lat, pos.lon), kp, protons } : null);
 
   lastWx = { sfi, sfiOk, kp, kpOk, xr, xrOk, protons };
+  // Saved for the next visit's first paint (storedWx reads it back).
+  try {
+    localStorage.setItem('hopWx',
+      JSON.stringify({ v: 1, savedAt: Date.now(), sfi, kp, xr, protons }));
+  } catch (e) {}
   $('status').innerHTML = statusTiles(lastWx, ion, muf, luf, posTile, sunTile).join('');
 
   if (luf >= muf) {
@@ -351,8 +413,11 @@ async function refresh() {
 
   lastCtx = { muf, kp, sunEl, lat: pos.lat, lon: pos.lon, xrayFlux: xr.flux,
               protons, refr, sunRise: sun.rise, sunSet: sun.set };
-  renderBands(lastCtx);
+  // connectLive first: on the paths that reach here without the early
+  // paint it is what restores the persisted window, and the render must
+  // never run ahead of the restore.
   connectLive(pos);
+  renderBands(lastCtx);
 }
 
 $('go').addEventListener('click', refresh);

@@ -83,6 +83,55 @@ test('a stale, foreign, or old-format window is not restored', () => {
   assert.strictEqual(old.api.spots.length, 0, 'an old-format save is discarded');
 });
 
+test('a same-grid reconnect attempt never wipes the window', () => {
+  // Every refresh calls connectLive with the same grid; on a page whose
+  // broker never answered (no mqtt lib here, as in a blocked-CDN
+  // browser) that call used to empty the spot window irrecoverably.
+  const h = load();
+  h.api.connectLive(h.api.parseGrid('FN30'));
+  h.api.addSpot('20m', 'IO91', 'FN30', 'FT8', Date.now() - 1000, 'G4X', 'K2A');
+  h.api.connectLive(h.api.parseGrid('FN30'));   // the 10-minute tick
+  assert.strictEqual(h.api.spots.length, 1, 'the window survives the tick');
+  h.api.connectLive(h.api.parseGrid('IO91'));   // a real move still empties it
+  assert.strictEqual(h.api.spots.length, 0);
+});
+
+test('a reload paints the restored window before any fetch answers', () => {
+  const now = Date.now();
+  const probe = load();
+  const key = keyFor(probe.api, 'FN30');
+  const savedAt = now - 60000;
+  const spotRow = (t, who, far) =>
+    [Math.round((savedAt - t) / 1000), 4, 5570, 'FT8', 1, who, 0, 0, far];
+  const store = {
+    hopGrid: 'FN30',
+    hopSpots: JSON.stringify({
+      v: 2, gridKey: key, savedAt, liveSince: now - 20 * 60000,
+      spots: [spotRow(now - 5 * 60000, 'G4X>K2A', 'IO91'),
+              spotRow(now - 6 * 60000, 'G4Y>K2A', 'IO91'),
+              spotRow(now - 7 * 60000, 'G4Z>K2A', 'IO92')],
+    }),
+  };
+  // load() runs the boot refresh; its fetches all hang past this test,
+  // so everything asserted here was painted synchronously.
+  const h = load({ store });
+  assert.match(h.els.bands.innerHTML, /3<\/b> spots/, 'restored spots on the first paint');
+  assert.match(h.els.bands.innerHTML, /reach <b>[\d,]+<\/b> km/,
+    'restored far squares corroborate a reach');
+});
+
+test('stored space weather feeds the first paint, stale stores do not', () => {
+  const fresh = load({ store: { hopWx: JSON.stringify(
+    { v: 1, savedAt: Date.now() - 60 * 60000, sfi: 180, kp: 7 }) } });
+  const wx = fresh.api.storedWx();
+  assert.strictEqual(wx.sfi, 180);
+  assert.strictEqual(wx.kp, 7);
+  assert.strictEqual(wx.sfiOk, false, 'a stored reading never claims to be live');
+  const stale = load({ store: { hopWx: JSON.stringify(
+    { v: 1, savedAt: Date.now() - 4 * 60 * 60000, sfi: 180, kp: 7 }) } });
+  assert.strictEqual(stale.api.storedWx(), null);
+});
+
 test('renderBands persists the window as it renders', () => {
   const store = {};
   const h = load({ store });

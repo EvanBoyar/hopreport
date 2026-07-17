@@ -18,7 +18,7 @@ test('liveStats extrapolates a partial window to a full-hour rate', () => {
   assert.ok(partial > full, `same count over less time scores higher (${Math.round(partial)} > ${Math.round(full)})`);
   // 10 spots in a quarter of the 30 minute window are an 80/hour rate,
   // so they must score like 80 raw per-hour counts.
-  const st80 = { n: 80, max: quarter.max, max2: quarter.max2, cw: 0,
+  const st80 = { n: 80, max: quarter.max, reach: quarter.reach, cw: 0,
                  dRx: 48, dTx: 32, cRx: 0, cTx: 0 };
   assert.ok(Math.abs(partial - api.liveScore(b20, st80)) < 0.01);
 });

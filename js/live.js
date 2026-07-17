@@ -61,7 +61,8 @@ function saveSpots() {
     localStorage.setItem(SPOTS_KEY, JSON.stringify({
       v: 2, gridKey: mqttGrids, savedAt, liveSince,
       spots: spots.map(s => [Math.round((savedAt - s.t) / 1000), BAND_ORD[s.band],
-        s.km, s.md, s.rx ? 1 : 0, s.who, s.tp ? 1 : 0, s.src === 'r' ? 1 : 0]),
+        s.km, s.md, s.rx ? 1 : 0, s.who, s.tp ? 1 : 0, s.src === 'r' ? 1 : 0,
+        s.far || '']),
       own: ownHeard.map(o => [Math.round((savedAt - o.t) / 1000), BAND_ORD[o.band],
         o.rx, o.km]),
     }));
@@ -90,8 +91,11 @@ function restoreSpots(key) {
     const band = BANDS[r[1]] ? BANDS[r[1]].nm : '';
     const t = d.savedAt - r[0] * 1000;
     if (!band || t <= cut) continue;
+    // Rows from before the far-square field load with far '': they all
+    // share one corroboration group until the window rolls them out.
     spots.push({ t, band, km: r[2], md: String(r[3] || ''), rx: !!r[4],
-                 who: String(r[5] || ''), tp: !!r[6], src: r[7] ? 'r' : 'm' });
+                 who: String(r[5] || ''), tp: !!r[6], src: r[7] ? 'r' : 'm',
+                 far: String(r[8] || '') });
   }
   ownHeard = [];
   if (Array.isArray(d.own)) {
@@ -158,9 +162,14 @@ function addSpot(band, gridA, gridB, mode, heardMs, txCall, rxCall, src) {
                       s.md === md && s.who === who);
   if (dup) return;
   // Direction: rx means a monitor in our neighborhood heard this spot;
-  // otherwise our neighborhood was the one being heard elsewhere.
+  // otherwise our neighborhood was the one being heard elsewhere. The
+  // far end's square rides along as the unit of corroboration for
+  // reach: a spot's distance comes entirely from the reported locators,
+  // and the locator is the datum a mangled spot gets wrong, so distance
+  // claims are counted per far square, never per spot.
   const rx = myGrids.has((gridB || '').slice(0, 4).toUpperCase());
-  spots.push({ t, band, km, md, rx, who, tp, src: src === 'r' ? 'r' : 'm' });
+  const far = ((rx ? gridA : gridB) || '').slice(0, 4).toUpperCase();
+  spots.push({ t, band, km, md, rx, who, tp, src: src === 'r' ? 'r' : 'm', far });
 }
 
 function liveStats(bandName, useDigi, useCw, fill) {
@@ -175,27 +184,34 @@ function liveStats(bandName, useDigi, useCw, fill) {
   // the filled fraction of the 30 minute window, so it stands for
   // WINDOWS_PER_HOUR/fill spots per hour (never extrapolating from less
   // than five minutes of data), while a retrieval spot arrives with the
-  // whole window behind it and counts WINDOWS_PER_HOUR. max2 is the
-  // second-longest distance; reach is scored on it so one mangled
-  // locator cannot swing a band.
+  // whole window behind it and counts WINDOWS_PER_HOUR. reach is the
+  // corroborated distance: distance claims are grouped by far-end square
+  // (the locator is the datum a mangled spot gets wrong, and errors
+  // repeat per station — one bad locator spotted fifty times is fifty
+  // bad spots — while misconfigured clients even share default squares,
+  // so the square gets the vote, not the spot or the callsign) and
+  // reach is the second-best square's distance. Zero until a second
+  // square corroborates. max keeps the raw longest for the display and
+  // the silence guard's most generous reading.
   const w = WINDOWS_PER_HOUR / Math.max(1 / 6, Math.min(1, fill ?? 1));
-  let n = 0, max = 0, max2 = 0, cw = 0, dRx = 0, dTx = 0, cRx = 0, cTx = 0,
+  let n = 0, max = 0, cw = 0, dRx = 0, dTx = 0, cRx = 0, cTx = 0,
       wdRx = 0, wdTx = 0, wcRx = 0, wcTx = 0,
-      tN = 0, tMax = 0, tMax2 = 0, wtRx = 0, wtTx = 0;
+      tN = 0, tMax = 0, wtRx = 0, wtTx = 0;
+  const farKm = Object.create(null), tFarKm = Object.create(null);
   for (const x of spots) {
     if (x.band !== bandName) continue;
     const isCw = x.md === 'CW';
     if (isCw ? !useCw : !useDigi) continue;
     // Tropo spots (6m) ride their own tally; they never touch the sky
     // counts or reach, but they carry the same coverage-weighted hourly
-    // rates and second-longest guard so tropoLiveScore can judge them
+    // rates and corroboration guard so tropoLiveScore can judge them
     // the way liveScore judges a band.
     if (x.tp) {
       tN++;
       const twx = x.src === 'r' ? WINDOWS_PER_HOUR : w;
       if (x.rx) wtRx += twx; else wtTx += twx;
-      if (x.km > tMax) { tMax2 = tMax; tMax = x.km; }
-      else if (x.km > tMax2) tMax2 = x.km;
+      if (x.km > tMax) tMax = x.km;
+      if (x.km > (tFarKm[x.far] || 0)) tFarKm[x.far] = x.km;
       continue;
     }
     n++;
@@ -203,11 +219,19 @@ function liveStats(bandName, useDigi, useCw, fill) {
     if (isCw) { cw++; if (x.rx) { cRx++; wcRx += wx; } else { cTx++; wcTx += wx; } }
     else if (x.rx) { dRx++; wdRx += wx; }
     else { dTx++; wdTx += wx; }
-    if (x.km > max) { max2 = max; max = x.km; }
-    else if (x.km > max2) max2 = x.km;
+    if (x.km > max) max = x.km;
+    if (x.km > (farKm[x.far] || 0)) farKm[x.far] = x.km;
   }
-  return { n, max, max2, cw, dRx, dTx, cRx, cTx, wdRx, wdTx, wcRx, wcTx,
-           tN, tMax, tMax2, wtRx, wtTx };
+  // Second-best per-square distance: the best claim backed by a second,
+  // independently sourced square.
+  const second = m => {
+    let a = 0, b = 0;
+    for (const k in m) { const v = m[k]; if (v > a) { b = a; a = v; } else if (v > b) b = v; }
+    return b;
+  };
+  return { n, max, reach: second(farKm), cw, dRx, dTx, cRx, cTx,
+           wdRx, wdTx, wcRx, wcTx,
+           tN, tMax, tReach: second(tFarKm), wtRx, wtTx };
 }
 
 function windowFill() {
@@ -256,7 +280,7 @@ function updateHeardNote() {
   const min = Math.floor((Date.now() - last.t) / 60000);
   const times = ownHeard.length > 1 ? `${ownHeard.length} times` : 'once';
   $('heardNote').textContent = `heard ${times} in the last 30 min, last by ` +
-    `${last.rx} on ${last.band} at ${Math.round(last.km).toLocaleString()} km, ` +
+    `${last.rx} on ${last.band} at ${fmtKm(last.km)} km, ` +
     (min < 1 ? 'just now' : `${min} min ago`);
 }
 
@@ -290,16 +314,24 @@ function connectLive(pos) {
   const grids = neighborGrids(pos);
   myGrids = new Set(grids);   // before any bail-out: retrieval spots need it too
   const key = grids.join(',');
-  if (key === mqttGrids && mqttClient && (mqttClient.connected || cascadeActive)) return;
+  const moved = key !== mqttGrids;
+  if (!moved && mqttClient && (mqttClient.connected || cascadeActive)) return;
   if (mqttClient) { try { mqttClient.end(true); } catch (e) {} mqttClient = null; }
-  // The old neighborhood's window empties whether or not a broker was
-  // ever reached: retrieval spots are grid-blind and would otherwise
-  // survive the move.
-  spots = []; ownHeard = []; liveSince = 0; lostAt = 0;
-  mqttGrids = key;
-  restoreSpots(key);   // before the mqtt bail-out: a broker-less page still keeps its window
+  if (moved) {
+    // The old neighborhood's window empties whether or not a broker was
+    // ever reached: retrieval spots are grid-blind and would otherwise
+    // survive the move. Only a move may empty it, though. A same-grid
+    // call arrives with every refresh, and on a page whose broker never
+    // answered (mqtt.js blocked, port filtered) the window it would have
+    // wiped holds the only copy of the restored and retrieval-fed spots
+    // — and restoreSpots refuses to run twice for one key, so the wipe
+    // was unrecoverable.
+    spots = []; ownHeard = []; liveSince = 0; lostAt = 0;
+    mqttGrids = key;
+    restoreSpots(key); // before the mqtt bail-out: a broker-less page still keeps its window
+  }
   if (!window.mqtt) {
-    setLiveState('mqtt.js failed to load. Scores are model only.', 'bad');
+    setLiveState('mqtt.js failed to load. No live feed; scores stand on the model plus any saved or polled spots.', 'bad');
     return;
   }
   const urls = goodUrl
@@ -313,7 +345,7 @@ function attemptConnect(urls, grids, round = 1) {
     // Never give up: quick rounds at first, then a gentler cadence so we do
     // not hammer the broker. Scores stay model only until the feed answers.
     const delay = round < 3 ? 20 : 60;
-    setLiveState(`no answer on round ${round}. Retrying in ${delay} s; scores are model only meanwhile.`, 'warn');
+    setLiveState(`no answer on round ${round}. Retrying in ${delay} s; no new live spots meanwhile.`, 'warn');
     if (round === 3) {
       $('qslNote').textContent =
         'Three rounds without an answer. The broker accepts secure WebSockets from https pages, so this is a firewall on port 1886, a broker outage, or this browser\'s own network stack gone stale, which can happen after a sleep and wake. Restarting the browser clears a stale stack; if the page connects fine in a different browser, that was it. Retries continue in the background.';

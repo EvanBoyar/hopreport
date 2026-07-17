@@ -378,6 +378,25 @@ function verdict(score) {
   return ['CLOSED', 's-closed'];
 }
 
+/* ---------- display formatting ---------- */
+
+function fmtKm(km) {
+  // Two significant figures. Spot distances are computed between 4-char
+  // square centers, which carries up to a square of slack per end, so
+  // "17,123 km" would claim precision the data never had; the trailing
+  // zeros are the honesty.
+  if (!(km > 0)) return '0';
+  const mag = Math.pow(10, Math.max(0, Math.floor(Math.log10(km)) - 1));
+  return (Math.round(km / mag) * mag).toLocaleString();
+}
+
+function fmtCount(n) {
+  // Counts are exact, but nobody acts on the ones digit of 10,164:
+  // thousands compress to 1.3k / 13k / 130k, exact below a thousand.
+  if (n < 1000) return String(n);
+  return n < 9950 ? (Math.round(n / 100) / 10) + 'k' : Math.round(n / 1000) + 'k';
+}
+
 /* ---------- 6m tropo ---------- */
 
 // Past -157 N/km a ray bends more than the earth curves and follows it:
@@ -452,14 +471,14 @@ function tropoRate(st, act = null) {
 function tropoLiveScore(st, act = null, ref = null, expWin = null) {
   // The live half of the tropo verdict, shaped like liveScore: rate
   // against expected operator activity plus reach across the 150-500 km
-  // annulus, reach judged by the second-longest spot so one mangled
-  // locator cannot call an opening. The denominator is the population-
-  // scaled reference when the baseline knows the annulus, else the
-  // universal TROPO_REF.
+  // annulus, reach judged by the corroborated far-square figure so one
+  // mangled locator cannot call an opening. The denominator is the
+  // population-scaled reference when the baseline knows the annulus,
+  // else the universal TROPO_REF.
   const activity = 1 - Math.exp(-tropoRate(st, act) / (ref || TROPO_REF));
   const reachOf = km => Math.min(1, Math.max(0,
     (km - LOS_KM) / (MIN_SKY_KM['6m'] - LOS_KM)));
-  const score = 100 * (0.45 * activity + 0.55 * reachOf(st.tMax2));
+  const score = 100 * (0.45 * activity + 0.55 * reachOf(st.tReach ?? st.tMax));
   if (st.tN >= 3) return score;
   // Damning silence, annulus edition: a watched window in a neighborhood
   // whose tropo baseline promised traffic, and almost nothing came. The
@@ -641,15 +660,17 @@ function liveScore(band, st, act = null, ref = null, expWin = null) {
   // are scored: 6 spots at 04 local outrank 20 at 20 local, and a pile
   // of CW spots during CQ WW CW is business as usual, not an opening.
   // Reach is left alone otherwise; distance is propagation's doing, not
-  // the operators'. It is judged by the second-longest spot so a single
-  // mangled locator in the feed cannot hold a band open all window long.
+  // the operators'. It is judged by liveStats' corroborated figure (the
+  // best distance backed by a second far-end square), so one station
+  // with a mangled locator cannot hold a band open all window long,
+  // however many monitors spot it.
   // The denominator is the population-scaled reference when the baseline
   // knows the area, else the universal 40: 40 normalized spots/hour at
   // evening peak reads the same as 10 spots did over the old 15 minute
   // window.
   const nEff = normalizedRate(st, act);
   const activity = 1 - Math.exp(-nEff / (ref || 40));
-  const reach = Math.min(1, (st.max2 ?? st.max) / (REF_DIST[band.nm] || 5000));
+  const reach = Math.min(1, (st.reach ?? st.max) / (REF_DIST[band.nm] || 5000));
   const score = 100 * (0.45 * activity + 0.55 * reach);
   if (st.n >= 3) return score;
   // Under three spots the score is normally withheld, but well-watched
@@ -661,7 +682,7 @@ function liveScore(band, st, act = null, ref = null, expWin = null) {
   if (!silenceConvicts(st.n, expWin)) return null;
   // Even then the conviction must survive the most generous reading of
   // the crumbs: reach judged on the longest spot, since the usual
-  // second-longest guard has nothing to stand on under three. A lone
+  // corroboration guard has nothing to stand on under three. A lone
   // long-haul decode is counter-evidence, and the band stays sparse on
   // it rather than closing on a verdict the spot itself contradicts.
   const generous = 100 * (0.45 * activity +

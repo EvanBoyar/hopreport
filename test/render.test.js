@@ -23,10 +23,13 @@ test('renderBands blends live and model, shows direction split', () => {
   const { api, el } = seeded();
   api.renderBands(CTX);
   const r = row(el, '20m');
-  assert.match(r, /blended live/);
   assert.match(r, /↓5 ↑2/);
   assert.match(r, /7<\/b> spots/);
   assert.match(r, /\(2 CW\)/);
+  assert.match(r, /reach <b>[\d,]+<\/b> km/, 'two far squares corroborate a reach');
+  assert.doesNotMatch(r, /model only|live only|needs 3/,
+    'the default blend carries no label');
+  assert.doesNotMatch(r, /MUF ratio|abs |geo /, 'passing gates are not named');
 });
 
 test('model off: live-only scores and honest empty states', () => {
@@ -71,7 +74,7 @@ test('6m tropo rides its own line and scores live-only on the tally', () => {
   assert.match(tr, /<span class="nm">tropo<\/span>/, 'named like a band');
   assert.match(tr, /<span class="fq">50\.30 MHz<\/span>/, 'frequency where a band keeps it');
   assert.match(tr, /<b>3<\/b> spots heard/);
-  assert.match(tr, /max <b>\d+<\/b> km/);
+  assert.match(tr, /max <b>\d+<\/b> km/, 'one far square: an uncorroborated max, no reach');
   assert.match(tr, /live only/);
   assert.match(tr, /\d+ \/ 100/, 'three spots earn a verdict without weather');
   assert.match(tr, /FLAT|NORMAL|ENHANCED/, 'a tropo word, never the HF ladder');
@@ -149,7 +152,8 @@ test('gradient and tally blend; model switch removes the weather term', () => {
   let tr = tropoRow(el);
   assert.match(tr, /N-gradient <b>-120<\/b> N\/km, 110–340 m/);
   assert.doesNotMatch(tr, /\(duct\)/);
-  assert.match(tr, /blended live/);
+  assert.doesNotMatch(tr, /model only|live only|needs 3/,
+    'gradient plus tally is the default blend and carries no label');
   els.incModel.checked = false;
   api.renderBands(ctx);
   tr = tropoRow(el);
@@ -194,6 +198,6 @@ test('refresh: no blanking; a grid change repaints in place from the model', asy
   assert.match(els.status.innerHTML, /9\.0°E/, 'new position painted synchronously');
   assert.match(els.status.innerHTML, /estimated from SFI/, 'sonde claim dropped until refetch');
   assert.ok(!els.bands.innerHTML.includes('↓'), 'old neighborhood spots cleared');
-  assert.match(els.bands.innerHTML, /MUF ratio/, 'bands stand on the model meanwhile');
+  assert.match(els.bands.innerHTML, /model only/, 'bands stand on the model meanwhile');
   await p2;
 });

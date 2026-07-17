@@ -72,7 +72,8 @@ test('6m splits its near field: line of sight dropped, tropo kept apart', () => 
   assert.ok(st.max > 500, 'sky reach comes from the Es spot');
   assert.strictEqual(st.tN, 2, 'the tropo spots ride their own tally');
   assert.ok(st.tMax > 250 && st.tMax < 500);
-  assert.ok(st.tMax2 > 150 && st.tMax2 < st.tMax, 'second-longest guard tracked');
+  assert.ok(st.tReach > 150 && st.tReach < st.tMax,
+    'a second far square corroborates the shorter distance');
   assert.ok(st.wtRx > 0 && st.wtTx > 0, 'tropo rates split by direction');
 });
 

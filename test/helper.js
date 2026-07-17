@@ -63,7 +63,7 @@ function load(opts = {}) {
       refractivityBest, tropoModelScore, tropoLiveScore, tropoVerdict,
       tropoRate, DUCT_GRAD, TRAP_M,
       normalizedRate, baselineExpected, setLiveState, windowFill,
-      windowObserved,
+      windowObserved, fmtKm, fmtCount, storedWx,
       connectLive, saveSpots, restoreSpots, queryMySpots, setCall,
       BANDS, LIVE_WINDOW, MIN_SKY_KM,
       get lastQsl() { return lastQsl; },

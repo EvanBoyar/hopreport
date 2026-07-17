@@ -476,7 +476,11 @@
         zone). The
         geomagnetic gate lowers the MUF by 5% for each Kp point above 3 and applies a direct
         penalty scaled to your latitude, weighted toward the high bands. The season gate trims
-        the low bands for summer static. Treat the 6&nbsp;m figure as a floor rather than a
+        the low bands for summer static. The facts line under each bar names a gate only when
+        it actually bites &mdash; <i>near MUF (0.94&times;)</i> is the band's frequency as
+        a fraction of the MUF (full marks below 0.82 of it, closed above it),
+        <i>absorption &times;0.31</i> and <i>Kp &times;0.72</i> are the score multipliers those
+        gates applied &mdash; so a row with no such note passed the model at full marks. Treat the 6&nbsp;m figure as a floor rather than a
         forecast, since nothing in the indices predicts sporadic&nbsp;E. The LUF readout is
         derived from the same absorption gate rather than modeled separately: it is the
         frequency where daytime D-layer loss alone would pull a band below fair. It is shown
@@ -517,8 +521,8 @@
         names the winning slab's heights. The best slab
         is the line's model term and blends with the live tally exactly the
         way the bands blend model and spots, the tally judged against expected
-        operator activity with reach across the annulus riding the second-longest
-        spot. The annulus has a population baseline of its own, collected in the same
+        operator activity with reach across the annulus riding the same corroborated
+        far-square figure the bands use. The annulus has a population baseline of its own, collected in the same
         quiet-day windows as the bands' (the near-field spots every other band
         discards are, on 6&nbsp;m, tallied instead), so once your area is known,
         ENHANCED means unusual for your neighborhood, not for a universal one. The
@@ -544,8 +548,17 @@
         the tab spent closed counts as uncovered, exactly like a dropped link.
         Once a band collects three or more spots, its
         displayed score becomes up to 0.6 live + 0.4 model, where the live score combines
-        spot rate with reach normalized for each band; reach is judged by the
-        second-longest spot, so one mangled locator in the feed cannot hold a band open. The spot count is first weighed
+        spot rate with reach normalized for each band. Reach is corroborated distance: a
+        spot's distance is computed entirely from the two reported locators, and the locator
+        is what a mangled spot gets wrong &mdash; wrong once, wrong in every spot that station
+        produces, and misconfigured clients even share default squares &mdash; so distance
+        claims are grouped by the far end's grid square and the reach shown (and scored) is
+        the best distance backed by a <i>second</i> square. One station with a bad locator,
+        however many monitors spot it, cannot hold a band open. A tally whose every spot sits
+        in one far square shows its longest spot labeled <i>max</i> instead and earns no
+        reach credit. Distances are shown to two significant figures, since square-center
+        arithmetic carries about a square of slack per end; spot counts past a thousand
+        compress the same way (13k). The spot count is first weighed
         against expected operator activity for the local solar time and day of week, since
         the networks go quiet in the small hours and run hot on contest weekends: a handful
         of spots at 4 am counts for more than the same handful at 8 pm. The activity curve
@@ -604,8 +617,8 @@
 </div>
 
 <script src="js/geo.js?v=5d126995"></script>
-<script src="js/model.js?v=e0b8d075"></script>
-<script src="js/live.js?v=edd9b221"></script>
-<script src="js/app.js?v=f392dd21"></script>
+<script src="js/model.js?v=f8d44960"></script>
+<script src="js/live.js?v=8d263fd3"></script>
+<script src="js/app.js?v=dd5aa16a"></script>
 </body>
 </html>

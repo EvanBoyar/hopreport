@@ -73,7 +73,7 @@ test('liveScore: 3-spot floor and night spots outranking evening crowds', () => 
 });
 
 test('liveScore: damning silence convicts, but only toward closure', () => {
-  const mute = { n: 0, max: 0, max2: 0, cw: 0, dRx: 0, dTx: 0, cRx: 0, cTx: 0 };
+  const mute = { n: 0, max: 0, reach: 0, cw: 0, dRx: 0, dTx: 0, cRx: 0, cTx: 0 };
   // No expectation supplied: silence stays an abstention.
   assert.strictEqual(api.liveScore(b20, mute), null);
   // A quiet corner (2 expected spots): zero spots is unremarkable.
@@ -85,10 +85,10 @@ test('liveScore: damning silence convicts, but only toward closure', () => {
   // One long-haul decode among the silence: the evidence disagrees with
   // itself, so the band abstains rather than closing (or opening) on a
   // single spot.
-  const oneFar = { n: 1, max: 7000, max2: 0, cw: 0, dRx: 1, dTx: 0, cRx: 0, cTx: 0 };
+  const oneFar = { n: 1, max: 7000, reach: 0, cw: 0, dRx: 1, dTx: 0, cRx: 0, cTx: 0 };
   assert.strictEqual(api.liveScore(b20, oneFar, null, null, 12), null);
   // Two short-skip crumbs where dozens were promised: closed.
-  const crumbs = { n: 2, max: 500, max2: 300, cw: 0, dRx: 2, dTx: 0, cRx: 0, cTx: 0,
+  const crumbs = { n: 2, max: 500, reach: 300, cw: 0, dRx: 2, dTx: 0, cRx: 0, cTx: 0,
                    wdRx: 4, wdTx: 0, wcRx: 0, wcTx: 0 };
   const s = api.liveScore(b20, crumbs, null, null, 20);
   assert.ok(s != null && s < 12, `expected a CLOSED score, got ${s}`);
@@ -103,17 +103,43 @@ test('windowObserved: a dead feed reads unwatched, not full', () => {
   assert.strictEqual(api.windowObserved(), 1);
 });
 
-test('reach is judged by the second-longest spot', () => {
+test('reach needs a second far square to corroborate a distance', () => {
   const { api } = load();
   api.myGrids = new Set(['FN30']);
   const t = Date.now();
   api.addSpot('20m', 'IO91', 'FN30', 'FT8', t - 1000, 'G4A', 'K2A');
-  api.addSpot('20m', 'IO91', 'FN30', 'FT8', t - 2000, 'G4B', 'K2A');
-  api.addSpot('20m', 'RE79', 'FN30', 'FT8', t - 3000, 'ZL9X', 'K2A');   // lone far outlier
+  // One station with a mangled locator, spotted over and over: errors
+  // repeat per station, so however many spots it sheds, its square is
+  // still one uncorroborated claim.
+  for (let i = 0; i < 8; i++)
+    api.addSpot('20m', 'RE79', 'FN30', 'FT8', t - 2000 - i * 60000, 'ZL9X', 'K2A');
   const st = api.liveStats('20m', true, true, 1);
-  assert.ok(st.max > st.max2, 'the outlier holds the max');
+  assert.ok(st.max > 12000, 'the outlier square holds the max');
+  assert.ok(st.reach > 5000 && st.reach < 6500,
+    `reach falls back to the corroborated square (got ${st.reach})`);
   assert.strictEqual(api.liveScore(b20, st), api.liveScore(b20, { ...st, max: 99999 }),
-    'the score keys on the second-longest spot');
+    'the score keys on corroborated reach, not the max');
+  // A second far square at range corroborates: reach follows.
+  api.addSpot('20m', 'PM95', 'FN30', 'FT8', t - 4000, 'JA1X', 'K2A');
+  api.addSpot('20m', 'PM96', 'FN30', 'FT8', t - 5000, 'JA2X', 'K2A');
+  const st2 = api.liveStats('20m', true, true, 1);
+  assert.ok(st2.reach > 9000, `two far squares corroborate DX reach (got ${st2.reach})`);
+});
+
+test('fmtKm and fmtCount round for honesty and economy', () => {
+  assert.strictEqual(api.fmtKm(17123), (17000).toLocaleString());
+  assert.strictEqual(api.fmtKm(9412), (9400).toLocaleString());
+  assert.strictEqual(api.fmtKm(764), '760');
+  assert.strictEqual(api.fmtKm(322), '320');
+  assert.strictEqual(api.fmtKm(87), '87');
+  assert.strictEqual(api.fmtKm(0), '0');
+  assert.strictEqual(api.fmtCount(999), '999');
+  assert.strictEqual(api.fmtCount(1000), '1k');
+  assert.strictEqual(api.fmtCount(1349), '1.3k');
+  assert.strictEqual(api.fmtCount(6644), '6.6k');
+  assert.strictEqual(api.fmtCount(9960), '10k');
+  assert.strictEqual(api.fmtCount(10164), '10k');
+  assert.strictEqual(api.fmtCount(134500), '135k');
 });
 
 test('parseFeedTime reads zoneless stamps as UTC', () => {
@@ -323,17 +349,17 @@ test('tropoModelScore lands the physical rungs on the verdict ladder', () => {
 });
 
 test('tropoLiveScore: three-spot gate, rate and reach, mangled-locator guard', () => {
-  assert.strictEqual(api.tropoLiveScore({ tN: 2, wtRx: 99, wtTx: 0, tMax2: 499 }),
+  assert.strictEqual(api.tropoLiveScore({ tN: 2, wtRx: 99, wtTx: 0, tReach: 499 }),
     null, 'under three spots no verdict');
-  const hot = api.tropoLiveScore({ tN: 20, wtRx: 40, wtTx: 0, tMax2: 490 });
+  const hot = api.tropoLiveScore({ tN: 20, wtRx: 40, wtTx: 0, tReach: 490 });
   assert.ok(hot > 85, `busy far-edge annulus scores high, got ${hot}`);
-  const near = api.tropoLiveScore({ tN: 3, wtRx: 2, wtTx: 0, tMax2: 160 });
+  const near = api.tropoLiveScore({ tN: 3, wtRx: 2, wtTx: 0, tReach: 160 });
   assert.ok(near < 15, `a trickle of close-in spots scores low, got ${near}`);
-  // Reach rides the second-longest spot: tMax plays no part.
-  const guarded = api.tropoLiveScore({ tN: 3, wtRx: 2, wtTx: 0, tMax2: 160, tMax: 499 });
+  // Reach rides the corroborated far-square figure: tMax plays no part.
+  const guarded = api.tropoLiveScore({ tN: 3, wtRx: 2, wtTx: 0, tReach: 160, tMax: 499 });
   assert.strictEqual(guarded, near);
   // A populous annulus demands more, a sparse one less, like the bands.
-  const st = { tN: 10, wtRx: 15, wtTx: 0, tMax2: 400 };
+  const st = { tN: 10, wtRx: 15, wtTx: 0, tReach: 400 };
   const city = api.tropoLiveScore(st, null, 80);
   const plain = api.tropoLiveScore(st, null, null);
   const rural = api.tropoLiveScore(st, null, 4);
@@ -356,7 +382,7 @@ test('tropoVerdict: own ladder, DUCTING the only green, gated on gradient', () =
 });
 
 test('tropo damning silence: watched, promised, empty reads FLAT, and only FLAT', () => {
-  const mute = { tN: 0, wtRx: 0, wtTx: 0, tMax: 0, tMax2: 0 };
+  const mute = { tN: 0, wtRx: 0, wtTx: 0, tMax: 0, tReach: 0 };
   assert.strictEqual(api.tropoLiveScore(mute, null, null, null), null,
     'no baseline expectation, no conviction');
   assert.strictEqual(api.tropoLiveScore(mute, null, null, 2), null,
@@ -364,6 +390,6 @@ test('tropo damning silence: watched, promised, empty reads FLAT, and only FLAT'
   const shut = api.tropoLiveScore(mute, null, null, 12);
   assert.ok(shut != null && shut < 30, `expected a FLAT score, got ${shut}`);
   // A lone far-edge spot contradicts the silence: abstain, never convict.
-  const oneFar = { tN: 1, wtRx: 2, wtTx: 0, tMax: 480, tMax2: 0 };
+  const oneFar = { tN: 1, wtRx: 2, wtTx: 0, tMax: 480, tReach: 0 };
   assert.strictEqual(api.tropoLiveScore(oneFar, null, null, 12), null);
 });
