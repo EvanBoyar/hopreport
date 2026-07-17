@@ -268,30 +268,47 @@ test('scoreBand stays within 0..100 and gates multiply', () => {
   }
 });
 
-test('refractivityGradient: Magnus N, steepest adjacent layer, duct call', () => {
-  // Cool moist air under warm dry air: the classic ducting inversion.
-  const duct = api.refractivityGradient([
+test('refractivityBest: spans weighted by trapping depth, duct needs both', () => {
+  // Cool moist air under warm dry air across a deep layer: duct-grade
+  // gradient with the depth to trap 6m.
+  const deep = api.refractivityBest([
     { p: 1000, t: 18, rh: 95, z: 100 },
     { p: 950,  t: 26, rh: 10, z: 500 },
   ]);
-  assert.ok(duct.grad < api.DUCT_GRAD, `duct-grade gradient, got ${duct.grad}`);
-  assert.strictEqual(duct.z, 100, 'reports the layer base');
+  assert.ok(deep.grad < api.DUCT_GRAD, `duct-grade gradient, got ${deep.grad}`);
+  assert.ok(deep.duct, 'deep duct-grade span flies the duct flag');
+  assert.strictEqual(deep.z, 100, 'reports the span base');
+  assert.strictEqual(deep.top, 500, 'and its top');
+  // The same inversion squeezed under TRAP_M: still steep, but the
+  // score carries the depth weight and the duct flag stays down —
+  // a 105 m layer cannot trap a 6 m wave, only bend it.
+  const thin = api.refractivityBest([
+    { p: 1013, t: 18, rh: 95, z: 2 },
+    { p: 1000, t: 26, rh: 10, z: 107 },
+  ]);
+  assert.ok(thin.grad < api.DUCT_GRAD, 'gradient itself is duct-grade');
+  assert.ok(!thin.duct, 'too thin to trap 6m');
+  assert.ok(Math.abs(thin.score -
+    api.tropoModelScore(thin.grad) * (105 / api.TRAP_M)) < 0.01,
+    'score is the ladder map times the depth weight');
+  // An inversion split across two thin rungs merges into one deep span
+  // that outscores either slice and earns the duct flag.
+  const merged = api.refractivityBest([
+    { p: 1013, t: 16, rh: 98, z: 2 },
+    { p: 1000, t: 22, rh: 45, z: 120 },
+    { p: 985,  t: 26, rh: 12, z: 250 },
+  ]);
+  assert.strictEqual(merged.z, 2, 'the merged span wins');
+  assert.strictEqual(merged.top, 250);
+  assert.ok(merged.duct, 'merged depth crosses the trapping threshold');
   // A bland profile reads near the standard -40 N/km, never a duct.
-  const std = api.refractivityGradient([
+  const std = api.refractivityBest([
     { p: 1000, t: 20, rh: 50, z: 100 },
     { p: 925,  t: 15, rh: 50, z: 800 },
   ]);
   assert.ok(std.grad < 0 && std.grad > -80, `standard-ish, got ${std.grad}`);
-  // Three levels: the sharp low layer must win over the bland one above,
-  // where a top-to-bottom mean would wash it out.
-  const layered = api.refractivityGradient([
-    { p: 1000, t: 18, rh: 95, z: 100 },
-    { p: 950,  t: 26, rh: 10, z: 500 },
-    { p: 900,  t: 24, rh: 30, z: 1050 },
-  ]);
-  assert.strictEqual(layered.z, 100, 'the inversion layer wins');
-  assert.ok(layered.grad < api.DUCT_GRAD);
-  assert.strictEqual(api.refractivityGradient([{ p: 1000, t: 20, rh: 50, z: 100 }]),
+  assert.ok(!std.duct);
+  assert.strictEqual(api.refractivityBest([{ p: 1000, t: 20, rh: 50, z: 100 }]),
     null, 'one level says nothing');
 });
 

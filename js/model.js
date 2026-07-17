@@ -168,20 +168,30 @@ async function fetchRefractivity(pos) {
   // The tropo line's model term. Tropo is weather, so it comes from a
   // weather model: Open-Meteo (CORS-open, keyless) serves forecast
   // temperature, humidity, and geopotential height on pressure levels
-  // for any coordinates. The lower levels ladder through the first
-  // kilometre at roughly 230 m spacing, where surface and low elevated
-  // ducts live; the ladder runs on to 750 hPa so high terrain (Denver
-  // sits above the 900 hPa surface) still gets usable levels. A grid
-  // above ~2.5 km outruns the ladder entirely and falls back to the
-  // tally, which is the honest answer there anyway. Only the current
-  // hour is asked for.
+  // for any coordinates, plus a screen reading 2 m above ground with
+  // its own surface pressure. The 2 m rung is what sees nocturnal
+  // radiation inversions, which form below the lowest pressure level;
+  // the ladder runs on to 750 hPa so high terrain (Denver sits above
+  // the 900 hPa surface) still gets usable levels. A grid above
+  // ~2.5 km outruns the ladder entirely and falls back to the tally,
+  // which is the honest answer there anyway. Only the current hour is
+  // asked for. Heights need care: geopotential levels arrive above sea
+  // level and the 2 m point above ground, so the surface rung is
+  // lifted to elevation + 2 for the math, and the winning span is
+  // reported back above ground, the frame an operator stands in.
   const LEVELS = [1000, 975, 950, 925, 900, 850, 800, 750];
   const vars = LEVELS.flatMap(p => [`temperature_${p}hPa`,
-    `relative_humidity_${p}hPa`, `geopotential_height_${p}hPa`]);
+    `relative_humidity_${p}hPa`, `geopotential_height_${p}hPa`])
+    .concat(['temperature_2m', 'relative_humidity_2m', 'surface_pressure']);
   const d = await getJSON('https://api.open-meteo.com/v1/forecast' +
     `?latitude=${pos.lat.toFixed(3)}&longitude=${pos.lon.toFixed(3)}` +
     `&hourly=${vars.join(',')}&forecast_hours=1&timeformat=unixtime`);
+  const elev = +d.elevation || 0;
   const prof = [];
+  const sfc = { p: +d.hourly.surface_pressure?.[0],
+                t: +d.hourly.temperature_2m?.[0],
+                rh: +d.hourly.relative_humidity_2m?.[0], z: elev + 2 };
+  if ([sfc.p, sfc.t, sfc.rh].every(Number.isFinite)) prof.push(sfc);
   for (const p of LEVELS) {
     const t = +d.hourly[`temperature_${p}hPa`]?.[0];
     const rh = +d.hourly[`relative_humidity_${p}hPa`]?.[0];
@@ -190,13 +200,13 @@ async function fetchRefractivity(pos) {
     // extrapolation into rock and says nothing about the air; one much
     // past 2 km above it describes weather a ground station's tropo
     // paths never touch.
-    const elev = +d.elevation || 0;
     if (Number.isFinite(t) && Number.isFinite(rh) && Number.isFinite(z) &&
         z > elev && z <= elev + 2000) prof.push({ p, t, rh, z });
   }
-  const g = refractivityGradient(prof);
+  const g = refractivityBest(prof);
   if (!g) throw new Error('no usable profile');
-  return g;
+  return { ...g, z: Math.max(0, g.z - Math.round(elev)),
+           top: g.top - Math.round(elev) };
 }
 
 /* ---------- model ---------- */
@@ -370,32 +380,45 @@ function verdict(score) {
 
 /* ---------- 6m tropo ---------- */
 
-function refractivityGradient(profile) {
+// Past -157 N/km a ray bends more than the earth curves and follows it:
+// a duct. Super-refraction starts near -79; standard atmosphere ~ -40.
+const DUCT_GRAD = -157;
+// A duct traps only waves short enough for its depth (lambda_max ≈
+// 2.5e-3 · d^1.5, both in meters), so 50 MHz needs about 180 m of
+// layer. Thinner inversions super-refract 6m; they cannot duct it.
+const TRAP_M = 180;
+
+function refractivityBest(profile) {
   // Radio refractivity N = 77.6 P/T + 3.73e5 e/T^2 (P and vapor
-  // pressure e in hPa, T in kelvin), e from the Magnus formula. The
-  // steepest fall between adjacent levels is the duct indicator, not
-  // the top-to-bottom mean: ducting layers are shallow, and a deep
-  // average washes out exactly the inversion being looked for. Returns
-  // N-units per km (about -40 in a standard atmosphere) with the height
-  // of the layer's base, or null with fewer than two usable levels.
+  // pressure e in hPa, T in kelvin), e from the Magnus formula. Every
+  // contiguous span of the profile is scored — the gradient's ladder
+  // score weighted by min(1, depth/TRAP_M) — and the best span wins:
+  // steep air counts only insofar as it is deep enough to matter at
+  // 50 MHz, which keeps the routine midnight surface inversion a nudge
+  // instead of an alarm. Spanning whole runs also credits a duct that
+  // straddles two pressure rungs, which per-layer scoring chopped into
+  // diluted slices. The duct flag needs one span that is both
+  // duct-grade and trapping-deep. Null under two usable levels.
   const pts = profile.map(l => {
     const T = l.t + 273.15;
     const e = (l.rh / 100) * 6.112 * Math.exp(17.62 * l.t / (243.12 + l.t));
     return { z: l.z, n: 77.6 * l.p / T + 3.73e5 * e / (T * T) };
   }).sort((a, b) => a.z - b.z);
-  let best = null;
-  for (let i = 1; i < pts.length; i++) {
-    const dz = (pts[i].z - pts[i - 1].z) / 1000;
-    if (dz < 0.05) continue;
-    const grad = (pts[i].n - pts[i - 1].n) / dz;
-    if (!best || grad < best.grad) best = { grad, z: Math.round(pts[i - 1].z) };
+  let best = null, duct = false;
+  for (let i = 0; i < pts.length - 1; i++) {
+    for (let j = i + 1; j < pts.length; j++) {
+      const dm = pts[j].z - pts[i].z;
+      if (dm < 50) continue;
+      const grad = (pts[j].n - pts[i].n) / (dm / 1000);
+      const score = tropoModelScore(grad) * Math.min(1, dm / TRAP_M);
+      if (grad <= DUCT_GRAD && dm >= TRAP_M) duct = true;
+      if (!best || score > best.score) {
+        best = { grad, z: Math.round(pts[i].z), top: Math.round(pts[j].z), score };
+      }
+    }
   }
-  return best;
+  return best && { ...best, duct };
 }
-
-// Past -157 N/km a ray bends more than the earth curves and follows it:
-// a duct. Super-refraction starts near -79; standard atmosphere ~ -40.
-const DUCT_GRAD = -157;
 
 function tropoModelScore(grad) {
   // The gradient mapped onto the verdict ladder at its physical rungs:

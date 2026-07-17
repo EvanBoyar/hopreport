@@ -505,11 +505,17 @@
         the band, and only spots past the sporadic-E floor of 500&nbsp;km count as sky.
         The tropo line is judged on its own evidence, because tropo is weather, not
         ionosphere: Open-Meteo's forecast profile over your grid supplies temperature
-        and humidity through the lowest kilometre, and from it the page computes the
-        sharpest vertical radio-refractivity gradient &mdash; about &minus;40 N-units
-        per km in a standard atmosphere, super-refraction from &minus;79, and past
-        &minus;157 a duct, where the ray bends more than the earth curves. That
-        gradient is the line's model term and blends with the live tally exactly the
+        and humidity from 2&nbsp;m above ground up through the lowest kilometre and a
+        half, and the page scores every contiguous slab of it &mdash; the slab's
+        vertical radio-refractivity gradient (about &minus;40 N-units per km in a
+        standard atmosphere, super-refraction from &minus;79, past &minus;157 a duct,
+        where the ray bends more than the earth curves) weighted by the depth a duct
+        needs to trap a 6&nbsp;m wave, about 180&nbsp;m. A midnight surface
+        inversion, real but shallow, nudges the line rather than sounding it, while
+        the deep marine and subsidence inversions that actually carry 6&nbsp;m get
+        full credit even when they straddle two levels of the profile; the facts line
+        names the winning slab's heights. The best slab
+        is the line's model term and blends with the live tally exactly the
         way the bands blend model and spots, the tally judged against expected
         operator activity with reach across the annulus riding the second-longest
         spot. The annulus has a population baseline of its own, collected in the same
@@ -598,8 +604,8 @@
 </div>
 
 <script src="js/geo.js?v=5d126995"></script>
-<script src="js/model.js?v=fd1407a5"></script>
+<script src="js/model.js?v=e0b8d075"></script>
 <script src="js/live.js?v=edd9b221"></script>
-<script src="js/app.js?v=6d0a7055"></script>
+<script src="js/app.js?v=f392dd21"></script>
 </body>
 </html>

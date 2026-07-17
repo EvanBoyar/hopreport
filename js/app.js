@@ -158,7 +158,7 @@ function renderBands(ctx) {
     let tropo = '';
     if (b.nm === '6m') {
       const refr = useModel ? ctx.refr : null;
-      const mT = refr ? tropoModelScore(refr.grad) : null;
+      const mT = refr ? refr.score : null;
       const tBl = grids ? baselineExpected(baselineData, grids, '6m-tropo', TROPO_REF) : null;
       // Expected raw tropo spots over the watched slice of the window,
       // for the damning-silence path — the bands' composition with the
@@ -169,13 +169,15 @@ function renderBands(ctx) {
       const lvT = (useDigi || useCw)
         ? tropoLiveScore(st, act, tBl ? tBl.ref : null, expWinT) : null;
       const tScore = blend(lvT, mT);
-      const duct = !!(refr && refr.grad <= DUCT_GRAD);
+      const duct = !!(refr && refr.duct);
       const [tWord, tCls] = tScore == null
         ? [st.tN ? 'sparse' : 'quiet', 's-none']
         : tropoVerdict(tScore, duct);
       const bits = [];
-      if (refr) bits.push(`N-gradient <b>${Math.round(refr.grad)}</b> N/km` +
-        (duct ? ' (duct)' : ''));
+      // The winning span's heights (above ground) tell a shallow skin
+      // inversion from a deep duct at a glance.
+      if (refr) bits.push(`N-gradient <b>${Math.round(refr.grad)}</b> N/km, ` +
+        `${refr.z}–${refr.top} m` + (duct ? ' (duct)' : ''));
       if (st.tN) {
         let devBit = '';
         if (tBl) {
@@ -324,8 +326,8 @@ async function refresh() {
     ? prR.value : null;
   // The tropo line's weather term; when Open-Meteo is unreachable the
   // line stands on its live tally alone.
-  const refr = rfR.status === 'fulfilled' && Number.isFinite(rfR.value?.grad)
-    ? rfR.value : null;
+  const refr = rfR.status === 'fulfilled' && Number.isFinite(rfR.value?.score)
+    && Number.isFinite(rfR.value?.grad) ? rfR.value : null;
 
   let muf = ion ? localizeSondeMUF(ion.muf, sfi, kp, now, pos, ion)
                 : estimateMUF(sfi, sunEl, kp, pos.lat, now);

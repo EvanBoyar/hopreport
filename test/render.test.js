@@ -127,15 +127,15 @@ test('the tropo line stays up and reads quiet with nothing heard', () => {
   assert.match(tr, /0 of 3 spots/);
 });
 
-test('a duct gradient alone reads DUCTING, model only', () => {
+test('a duct span alone reads DUCTING, model only', () => {
   const { api, el } = load();
-  api.renderBands({ ...CTX, refr: { grad: -170, z: 100 } });
+  api.renderBands({ ...CTX, refr: { grad: -170, z: 0, top: 250, score: 79, duct: true } });
   const tr = tropoRow(el);
-  assert.match(tr, /N-gradient <b>-170<\/b> N\/km \(duct\)/);
+  assert.match(tr, /N-gradient <b>-170<\/b> N\/km, 0–250 m \(duct\)/);
   assert.match(tr, /model only/);
   assert.match(tr, /DUCTING/);
   assert.match(tr, /s-open/);
-  assert.match(tr, /79 \/ 100/, '-170 N/km sits just past the duct rung at 75');
+  assert.match(tr, /79 \/ 100/);
 });
 
 test('gradient and tally blend; model switch removes the weather term', () => {
@@ -144,10 +144,10 @@ test('gradient and tally blend; model switch removes the weather term', () => {
   const t = Date.now();
   for (let i = 0; i < 3; i++)
     api.addSpot('6m', 'FN30', 'FN33', 'FT8', t - i * 60000 - 1000, 'K' + i, 'W2X');
-  const ctx = { ...CTX, refr: { grad: -120, z: 300 } };
+  const ctx = { ...CTX, refr: { grad: -120, z: 110, top: 340, score: 63, duct: false } };
   api.renderBands(ctx);
   let tr = tropoRow(el);
-  assert.match(tr, /N-gradient <b>-120<\/b> N\/km/);
+  assert.match(tr, /N-gradient <b>-120<\/b> N\/km, 110–340 m/);
   assert.doesNotMatch(tr, /\(duct\)/);
   assert.match(tr, /blended live/);
   els.incModel.checked = false;
