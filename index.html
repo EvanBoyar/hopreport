@@ -359,13 +359,16 @@
     .band .fq { font-size: 9px; letter-spacing: 0; white-space: nowrap; }
     .stamp { font-size: 10px; letter-spacing: 0.13em; padding: 2px 6px 1px 8px; }
     /* The locator, Update, and the three source switches share one row
-       on a phone. Measured: input 72 + Update 66 + digi/CW/model 150 +
-       two 6px gaps = 300, inside the 304px a 360px phone offers — so
-       the row holds from ~356px up and wraps only below that. */
+       on a phone. Measured: input 80 + Update 66 + digi/CW/model 143 +
+       two 6px gaps = 301, inside the 304px a 360px phone offers — so
+       the row holds from ~357px up and wraps only below that. The
+       input is sized to the widest valid 6-char locator (MM00MX,
+       74.5px at 15px / 0.05em) plus its padding, not to the average
+       one: a narrower box clipped the last letter. */
     .gridform { gap: 6px; }
-    #grid { width: 72px; font-size: 16px; }
+    #grid { width: 80px; font-size: 15px; letter-spacing: 0.05em; }
     .gridform .srcbox { margin-left: 0; gap: 6px; }
-    .cwbox { gap: 3px; }
+    .cwbox { gap: 3px; font-size: 11px; }
     .cwbox input { width: 13px; height: 13px; }
     button { padding: 6px 8px; }
     /* The title keeps clear of the switch's corner: the switch slims to
